@@ -1,0 +1,540 @@
+---
+title: "COVID-19 Vaccines by County"
+subtitle: "Step 0: Extracting the Data and Exploratory Data Analysis"
+author:
+  - name: Longwen Zhao
+    email: longwen.zhao@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
+  - name: Maciej Rysz
+    orcid: 0000-0003-2667-0398
+    email: ryszmw@miamioh.edu
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Fadel M. Megahed
+    orcid: 0000-0003-2194-5110
+    email: fmegahed@miamioh.edu
+    corresponding: true
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Allison Jones-Farmer
+    orcid: 0000-0002-1529-1133
+    email: farmerl2@miamioh.edu
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Steve Rigdon
+    orcid: 0000-0001-7668-0899
+    email: steve.rigdon@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+editor: visual
+format: 
+  html:
+    code-fold: false
+    code-tools: true
+    code-download: true
+    code-link: true
+    highlight-style: pygments
+    number-sections: true
+    paged-df: true
+    toc: true
+    toc-float: true
+    code-overflow: wrap
+    include-in-header: structure.tex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  progress = FALSE, 
+  verbose = FALSE,
+  fig.path = "figs/",
+  cache.extra = set.seed(2022), 
+  autodep = TRUE
+)
+
+knitr::dep_auto()
+
+options(qwraps2_markup = "markdown")
+
+# Setting properties for the default theme_bw() behavior for all plots
+if(require(ggplot2) == FALSE) install.packages("ggplot2")
+library(ggplot2) ; theme_set(theme_bw(base_size = 11) + theme(legend.position = 'top')) 
+
+# Setting default color palettes to RColorBrewer Palettes
+if(require(RColorBrewer) == FALSE) install.packages("RColorBrewer")
+scale_colour_discrete = scale_color_brewer(palette = "Dark2")
+```
+
+
+# Objectives of this Document
+
+The main objectives of this document are as follows:    
+
+  - Provide a scripted and reproducible document that explains how we extracted the covid vaccination data by county and potential predictors that can explain the variability within this data.    
+  - Present our exploratory data analysis for this data
+
+
+# R Setup and Required Packages
+In this project, the open-source `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language is used to model the COVID-19 percent fully-vaccinated progression in different U.S. counties. `r fontawesome::fa(name = "r-project", fill = "steelblue")` is maintained by an international team of developers who make the language available at [The Comprehensive R Archive Network](https://cran.r-project.org/). Readers interested in reusing our code and reproducing our results should have `r fontawesome::fa(name = "r-project", fill = "steelblue")` installed locally on their machines. `r fontawesome::fa(name = "r-project", fill = "steelblue")` can be installed on a number of different operating systems (see [Windows](https://cran.r-project.org/bin/windows/), [Mac](https://cran.r-project.org/bin/macosx/), and [Linux](https://cran.r-project.org/bin/linux/) for the installation instructions for these systems). We also recommend using the RStudio interface for `r fontawesome::fa(name = "r-project", fill = "steelblue")`. The reader can [download RStudio](http://www.rstudio.com/ide) for free by following the instructions at the link. For non-R users, we recommend the [Hands-on Programming with R](https://rstudio-education.github.io/hopr/packages.html) for a brief overview of the software's functionality. Hereafter, we assume that the reader has an introductory understanding of the `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language.
+
+In the code chunk below, we load the packages used to support our analysis. Our input and output files can also be accessed/ downloaded from [fmegahed/vaccines_spatial_and_optimization](https://github.com/fmegahed/vaccines_spatial_and_optimization).
+
+
+
+```{r packages, cache=FALSE}
+# create a files directory if it does not exist
+if (!dir.exists('step0_extract_and_eda_files')) {dir.create('step0_extract_and_eda_files')}
+
+# Check and install if these packages are not found locally on machine
+if(require(pacman)==FALSE) install.packages("pacman")
+if(require(devtools)==FALSE) install.packages("devtools")
+if(require(urbnmapr)==FALSE) devtools::install_github('UrbanInstitute/urbnmapr')
+if(require(albersusa)==FALSE) devtools::install_github("hrbrmstr/albersusa")
+
+pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analysis
+               fontawesome, rsvg, # for fontawesome icons
+               pander, knitr, # for nicely printed outputs
+               scales, plotly, # for plots
+               urbnmapr, tmap, sf, leaflet, albersusa, tigris, # for maps
+               gifski, av) # for creating gif and videos
+```
+
+
+
+
+---
+
+# Data Extraction
+
+
+## Extracting the Vaccines Dataset
+
+The CDC has made available a dataset for [COVID-19 Vaccinations in the United States by County](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh). Per the link's description, the dataset captures:  
+
+> Overall US COVID-19 Vaccine administration data at county level. Data represents all vaccine partners including jurisdictional partner clinics, retail pharmacies, long-term care facilities, dialysis centers, Federal Emergency Management Agency and Health Resources and Services Administration partner sites, and federal entity facilities. 
+
+
+We extracted the following data using the code in the chunk below. The descriptions for each variable are available at [CDC's Data Dictionary](https://data.cdc.gov/api/views/8xkx-amqh/files/90cdfb32-19a6-4ffb-8a45-e55cb3954c0d?download=true&filename=DataDictionary_v30_08112022.xlsx), and reproduced below for the reader's convenience.   
+
+- `date:` date in year-month-date format.  
+- `fips:` The United States' Federal Information Processing Standards provide a 5-digit numeric code for geographical locations (where the first two digits are reserved to denote the state number and the following three digits are used to codify the county number within the state). The numbers are in alphabetic order, where the first state `01 = Alabama`. 
+- `mmwr_week:` The week of the epidemiologic year as defined by the [Morbidity and Mortality Weekly Report](https://ndc.services.cdc.gov/wp-content/uploads/MMWR_week_overview.pdf).  
+- `recip_county:` The recipient county  
+- `recip_state:` The recipient state   
+- `series_complete_pop_pct:` Percent of people who are fully vaccinated (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction and county  where vaccine recipient lives  
+- `booster_doses_vax_pct:` Percent of  people who are fully vaccinated and have received a booster (or additional) dose.  
+- `svit_ctgy`: The CDC Social Vulnerability Index (SVI) rank categorization where:  
+    + `A` = 0–0.25 SVI rank  
+    + `B` = 0.2501–0.50 SVI rank  
+    + `C` = 0.5001–0.75 SVI rank  
+    + `D` = 0.7501–1.0 SVI rank   
+- `metro_status:` Metro vs. non-metro classification type is an aggregation of the six National Center for Health Statistics (NCHS) Urban-Rural Classification Scheme for Counties.  
+    + `Metro` counties include Large Central Metropolitan, Large Fringe Metropolitan, Medium Metropolitan, and Small Metropolitan classifications.   
+    + `Non-Metro` counties include Micropolitan and Non-Core (Rural) classifications.   
+- `census2019:` 2019 Census Population  
+
+In addition, we have capitalized on the [lubridate package](https://lubridate.tidyverse.org/) to extract two numeric variables: `month` and `day_of_month` since we will aggregate the data by month. Initially, we explored two possible days of the month for aggregating the vaccine data:  
+    + `1st of month`, which is the decision we decided to stick with.  
+    + `15th of month`, which captured the percent vaccinated at the middle of the month. We have decided against using this option due to data reporting inconsistencies in Texas (see [time_series_plot_response_15th_of_month.png](figs/time_series_plot_response_15th_of_month.png) for an example).   
+
+
+
+```{r get_vaccines}
+csvLink = "https://data.cdc.gov/api/views/8xkx-amqh/rows.csv?accessType=DOWNLOAD"
+
+# reading the data from the CDC site
+raw_vaccines_tbl = read_csv(csvLink) %>% 
+  janitor::clean_names() # all lower case
+
+# saving the time of extract for record keeping
+vac_csv_extract_time = Sys.time()
+
+# saving the raw_vaccines_tbl
+write_rds(x = raw_vaccines_tbl, file = 'data/raw_vaccines_tbl.rds', compress = 'gz')
+
+# subsetting the read data
+vaccines = raw_vaccines_tbl %>% 
+  # Removing unknown (UNK) and territories/states outside of continental US
+  filter(!recip_state %in% c('AK', 'AS', 'FM', 'GU', 'HI', 
+                             'MH', 'MP', 'PR', 'PW', 'UNK', 'VI')) %>% 
+  # Removing data with unknown FIPS code 
+  # since it will result in an unknown county in our data
+  filter(fips != 'UNK') %>% 
+  # creating new variables
+  mutate(
+    # converting the date variable to date
+    date = mdy(date),
+    # extracting the day of the month
+    day_of_month = day(date),
+    # extracting the month
+    month = month(date)
+  ) %>% 
+  # reducing data to monthly
+  dplyr::filter(day_of_month == 1)  %>% 
+  # arranging the date by fips code and then by date
+  arrange(fips, date)
+
+# need to select variables and fixing variable types
+vaccines = 
+  vaccines %>% 
+  # selecting variables of interest from the CDC's dataset
+  select(
+    date:recip_state,
+    series_complete_pop_pct, 
+    booster_doses_vax_pct,
+    svi_ctgy, 
+    metro_status, 
+    census2019
+  ) %>% 
+  # converting select character variables to factor
+  mutate(
+    recip_state = as.factor(recip_state),
+    svi_ctgy = as.factor(svi_ctgy),
+    metro_status = as.factor(metro_status)
+  )
+
+# Rounding the time of data extraction to the  nearest minute
+paste0('The vaccines data were extracted on ',  
+      format(vac_csv_extract_time, '%B %d, %Y'), 
+      ' at approximately ',
+     round_hms(as_hms(vac_csv_extract_time), digits = -2),
+     format(vac_csv_extract_time, ' %Z'), '.')
+```
+
+
+
+## Extracting Additional Potential Covariates
+
+While the CDC provides two potential covariates (`svi_ctgy` and `metro_status`) that can explain changes in our response variable (`series_complete_pop_pct`), we have also scraped information for the following predictors:  
+
+- `perc_rep_votes`, which captures the percent of the total county votes received by the Republican Presidential candidate in the 2020 elections. This variable is computed from the [MEDSL Election Returns Data Verse V10.0](https://dataverse.harvard.edu/file.xhtml?fileId=6104822&version=10.0). We downloaded the `countypres_2000-2020.csv` on `r file.info('data/countypres_2000-2020.csv')$mtime %>% lubridate::as_date() %>% format('%B %d, %Y')` at `r file.info('data/countypres_2000-2020.csv')$mtime %>% format('%H:%M:%S %Z')`
+
+
+```{r elections_data}
+# reading the downloaded CSV
+elections = read_csv("data/countypres_2000-2020.csv") %>%
+  # converting column names to lowercase 
+  janitor::clean_names() %>%
+  # just keeping data for the most recent presidential election and republican votes
+  filter(year == 2020 & party == "REPUBLICAN") %>% 
+  # computing percent of republican votes (from total votes)
+  mutate(perc_rep_votes = 100*(candidatevotes/totalvotes) ) %>% 
+  # keeping only the key and variable used in merge
+  select(county_fips, perc_rep_votes) %>% 
+  # summing all different types of votes for republican candidate
+  # since some states break down their votes (e.g., AR, GA, IA, NC, etc) into
+  # (i.e., prov + absentee + election day + advanced voting)
+  group_by(county_fips) %>% 
+  summarise(perc_rep_votes = sum(perc_rep_votes, na.rm = T)) %>% 
+  ungroup()
+
+# joining the elections data
+vaccines = 
+  left_join(x = vaccines, y = elections, 
+            by = c('fips' = 'county_fips'), 
+            keep = F)
+
+# saving the vaccines dataset
+write_rds(x = vaccines, file = 'data/vaccines.rds')
+```
+
+
+---
+
+# Exploratory Data Analysis
+
+## Meta Data Summary
+
+
+```{r skim}
+skim(vaccines)
+```
+
+
+
+## Response Variable: `series_complete_pop_pct`
+
+### Spatiotemporal Visualization
+
+
+```{r spatiotemporal_response_viz, results='hide'}
+# Getting the counties map from the urbnmapr package and excluding non-continental US
+counties_sf = get_urbn_map(map = "counties", sf = TRUE) %>% 
+  filter(!state_name %in% c('Alaska', 'Hawaii') )
+
+# Getting the states map from the urbnmapr package and excluding non-continental US
+states_sf = get_urbn_map(map = "states", sf = TRUE) %>% 
+  filter(!state_name %in% c('Alaska', 'Hawaii') )
+
+# Discretizing the response variable to facilitate the visualization
+vaccines = 
+  vaccines %>% 
+  mutate(series_complete_pop_pct_disc = 
+           cut(series_complete_pop_pct,
+               breaks = c(0, 29.9, 39.9, 49.9, 69.9, 100),
+               labels = c('0-29.9%', '30-39.9%',
+                          '40-49.9%', '50-69.9%', '70%+') ) )
+
+# Left joining counties_sf with the response variable
+cty_sf_vac = left_join(
+  counties_sf,
+  vaccines %>% select(date, fips, series_complete_pop_pct, series_complete_pop_pct_disc),
+  by = c("county_fips" = "fips")
+)
+
+# Adjusting the bounding boxes for the map so that legend and credits print nicely
+# Solution based on https://stackoverflow.com/a/60899644/10156153
+bbox_new = st_bbox(counties_sf)
+xrange = bbox_new$xmax - bbox_new$xmin # range of x values
+yrange = bbox_new$ymax - bbox_new$ymin # range of y values
+bbox_new[1] = bbox_new[1] - (0.1 * xrange) # xmin - left
+bbox_new[3] = bbox_new[3] + (0.12 * xrange) # xmax - right
+bbox_new[2] = bbox_new[2] - (0.1 * yrange) # ymin - bottom
+
+bbox_new = bbox_new %>%  # take the bounding box ...
+  st_as_sfc() # ... and make it a sf polygon
+
+# Create an animated map based on the tmap package
+animated_map = tm_shape(cty_sf_vac, bbox = bbox_new) +
+  tm_borders(col = "gray80", lwd = 0.15) +
+  tm_fill('series_complete_pop_pct_disc', palette = "YlGnBu", colorNA = "gray50",
+          title = "% of County's Total Population Fully Vaccinated") +
+  tm_facets(along = "date", free.coords = FALSE) +
+  tm_shape(states_sf) + 
+  tm_borders(col = "black", lwd = 0.5) +
+  tm_credits("Data Source: The CDC's COVID-19 Vaccinations in the US by County Dataset. Created by: Fadel M. Megahed \t")
+
+tmap_animation(animated_map, filename = "figs/animated_vaccine_map.gif", fps = 0.5,
+               width = 1000, height = 700, outer.margins = 0)
+
+tmap_animation(animated_map, filename = "figs/animated_vaccine_map.mp4", fps = 0.5,
+               width = 1000, height = 700, outer.margins = 0)
+```
+
+```{r spatiotemporal_response_viz_res, echo=FALSE}
+knitr::include_graphics('figs/animated_vaccine_map.mp4')
+```
+
+
+### Time Series Plots
+
+In the code chunk below, we create a time-series plot of the `series_complete_pop_pct` for a sample of six counties. Note how, the timeseries tend to follow a logistic growth curve. However, the data shows some irregularities in counties in TX and in GA. For viewers interested in viewing the time-series for additional counties, we invite you to interact with our web app hosted at <http://rstudio.fsb.miamioh.edu:3838/megahefm/vaccines/>.  
+
+
+```{r ts_plots}
+# a non-random sampling: six select counties 
+# selected to include counties from the four different SVI categories
+# as well as the two urban classifications
+sample_fips = c('04017', '13057', '36061', '39017', '48081', '54009' )
+
+# creating the plot
+vaccines %>% 
+  filter(fips %in% sample_fips) %>% 
+  mutate(county_name = paste(recip_county, recip_state, sep = ', ') ) %>% 
+  ggplot(aes(x = date, y = series_complete_pop_pct, 
+             group = county_name, color = svi_ctgy,
+             shape = metro_status) ) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(name = '% Fully Vaccinated', 
+                     breaks = scales::pretty_breaks(n=5), limits = c(0,100) ) +
+  scale_x_date(name = 'Date', breaks = scales::pretty_breaks(n = 4)) + 
+  scale_color_brewer(palette = 'Dark2') +
+  facet_wrap(~ county_name, ncol = 2) +
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = 'bottom',
+    plot.margin = margin(t = 0.1, r = 0.35, b = 0.1, l = 0.1, unit = 'cm')) -> 
+  plot_sample_y_ts
+
+# saving the static figure
+ggsave(filename = 'figs/time_series_plot_response.png', 
+       plot = plot_sample_y_ts,
+       width=10, height=6)
+
+# showing an interactive plotly figure
+ggplotly(plot_sample_y_ts, height = 500)
+  
+```
+
+
+
+## Potential Predictors
+
+### SVI Category
+
+
+```{r svi_viz, include=FALSE}
+# not included in the output for the Markdown/Quarto since we are including
+# the interactive plot
+
+cty_sf_pred = left_join(
+  x = counties_sf,
+  y = vaccines %>% 
+    select(fips, svi_ctgy, metro_status, census2019, perc_rep_votes) %>% unique(),
+  by = c("county_fips" = "fips")
+)
+
+# creating static visuals to be potentially used in our paper
+png(filename = 'figs/svi_viz.png', width = 1366, height = 768, pointsize = 16)
+tm_shape(cty_sf_pred) + 
+  tm_polygons('svi_ctgy', title = 'SVI Category', palette = "YlOrRd") +
+  tm_shape(states_sf) + 
+  tm_borders(col = "black", lwd = 0.5)
+invisible( dev.off() ) # to suppress the unwanted output from dev.off
+```
+
+```{r svi_viz_int}
+# creating an interactive plot for the HTML output
+
+#### Creating a longlat projection (required by leaflet)
+leaflet_sf = counties_sf(proj = 'longlat') %>% # from albersua
+  filter(!state %in% c('Alaska', 'Hawaii')) 
+
+leaflet_sf = 
+  leaflet_sf %>% 
+  geo_join(vaccines %>% 
+             select(fips, svi_ctgy, metro_status, census2019, perc_rep_votes) %>%
+             unique(),
+           by_sp= 'fips', by_df= 'fips') %>% 
+    mutate(perc_rep_votes_disc = 
+           cut(perc_rep_votes,
+               breaks = c(0, 19.99, 39.99, 49.9, 59.9, 79.9, 100),
+               labels = c('0-19.90%', '20-39.9%', '40-49.9%',
+                          '50-59.9%', '60-99.9%', '80%+') ) )
+
+#### Setting the Color Scheme
+leaflet_pal =  colorFactor('YlOrRd', domain = leaflet_sf$svi_ctgy, na.color = "white")
+
+#### The interactive visual
+leaflet() %>% # initializing the leaflet map
+  setView(lng = -96, lat = 37.8, zoom = 4) %>% # setting the view on Continental US
+  addTiles() %>% # adding the default tiles
+  addPolygons(
+    data = leaflet_sf, stroke = FALSE, fillColor = ~leaflet_pal(leaflet_sf$svi_ctgy), # adding the data
+    weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7, # adding color specs
+    popup = paste(
+      "County:", leaflet_sf$name, '<br>', 
+      "SVI Cat:", leaflet_sf$svi_ctgy, '<br>',
+      "Metro Status:", leaflet_sf$metro_status, '<br>',
+      '% Rep Votes:', round(leaflet_sf$perc_rep_votes, 1), '<br>',
+      "Population:", scales::comma(round(leaflet_sf$census2019, 1)), '<br>')
+  ) %>% #pop-up Menu
+  addLegend(position = "bottomleft", pal = leaflet_pal, values =  leaflet_sf$svi_ctgy, 
+            title = "SVI Category", opacity = 1) # legend formatting
+```
+
+
+### Metro Status
+
+
+```{r metro_status, include=FALSE}
+# creating static visuals to be potentially used in our paper
+# not included in the output for the Markdown/Quarto since we are including
+# the interactive plot
+png(filename = 'figs/metro_status.png', width = 1366, height = 768, pointsize = 16)
+tm_shape(cty_sf_pred) + 
+  tm_polygons('metro_status', title = 'Metro Status', palette = "Dark2") +
+  tm_shape(states_sf) + 
+  tm_borders(col = "black", lwd = 0.5)
+invisible( dev.off() ) # to suppress the unwanted output from dev.off
+```
+
+```{r metro_status_int}
+#### Setting the Color Scheme
+leaflet_pal =  colorFactor('Dark2', domain = leaflet_sf$metro_status, na.color = "white")
+
+#### The interactive visual
+leaflet() %>% # initializing the leaflet map
+  setView(lng = -96, lat = 37.8, zoom = 4) %>% # setting the view on Continental US
+  addTiles() %>% # adding the default tiles
+  addPolygons(
+    data = leaflet_sf, stroke = FALSE, fillColor = ~leaflet_pal(leaflet_sf$metro_status), # adding the data
+    weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7, # adding color specs
+    popup = paste(
+      "County:", leaflet_sf$name, '<br>', 
+      "SVI Cat:", leaflet_sf$svi_ctgy, '<br>',
+      "Metro Status:", leaflet_sf$metro_status, '<br>',
+      '% Rep Votes:', round(leaflet_sf$perc_rep_votes, 1), '<br>',
+      "Population:", scales::comma(round(leaflet_sf$census2019, 1)), '<br>')
+  ) %>% #pop-up Menu
+  addLegend(position = "bottomleft", pal = leaflet_pal, values =  leaflet_sf$metro_status, 
+            title = "Metro Status", opacity = 1) # legend formatting
+
+```
+
+
+### Percent Republican Votes
+
+
+```{r perc_rep, include=FALSE}
+# creating static visuals to be potentially used in our paper
+# not included in the output for the Markdown/Quarto since we are including
+# the interactive plot
+png(filename = 'figs/perc_rep_votes.png', width = 1366, height = 768, pointsize = 16)
+tm_shape(cty_sf_pred) + 
+  tm_polygons('perc_rep_votes', title = '% Rep. Votes', palette = "seq") +
+  tm_shape(states_sf) + 
+  tm_borders(col = "black", lwd = 0.5) +
+  tm_layout(aes.palette = list(seq = "-RdYlBu"))
+invisible( dev.off() ) # to suppress the unwanted output from dev.off
+```
+
+```{r perc_rep_int}
+#### Setting the Color Scheme
+leaflet_pal =  colorNumeric('RdYlBu', domain = leaflet_sf$perc_rep_votes, na.color = "white", reverse = T)
+
+#### The interactive visual
+leaflet() %>% # initializing the leaflet map
+  setView(lng = -96, lat = 37.8, zoom = 4) %>% # setting the view on Continental US
+  addTiles() %>% # adding the default tiles
+  addPolygons(
+    data = leaflet_sf, stroke = FALSE, fillColor = ~leaflet_pal(leaflet_sf$perc_rep_votes), # adding the data
+    weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7, # adding color specs
+    popup = paste(
+      "County:", leaflet_sf$name, '<br>',
+      "SVI Cat:", leaflet_sf$svi_ctgy, '<br>',
+      "Metro Status:", leaflet_sf$metro_status, '<br>',
+      '% Rep Votes:', round(leaflet_sf$perc_rep_votes, 1), '<br>',
+      "Population:", scales::comma(round(leaflet_sf$census2019, 1)), '<br>')
+  ) %>% #pop-up Menu
+  addLegend(position = "bottomleft", pal = leaflet_pal, values =  leaflet_sf$perc_rep_votes,
+            title = "% Rep Votes", opacity = 1) # legend formatting
+```
+
+
+---
+
+# Appendix
+In this appendix, we print all the `r fontawesome::fa(name = "r-project", fill = "steelblue")` packages used in our analysis and their versions to assist with reproducing our results/analysis.
+
+
+```{r sessionInfo}
+pander(sessionInfo(), compact = TRUE) # printing the session info
+```
+
