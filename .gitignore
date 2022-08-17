@@ -3,3 +3,5 @@
 .Rproj.user/
 .Rproj.user/shared/notebooks/paths
 data/raw_vaccines_tbl.rds
+step0_extract_and_eda_cache/
+step0_extract_and_eda_files/
