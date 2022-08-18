@@ -48,7 +48,6 @@ author:
         state: MO
         postal-code: 63104
 date: "`r format(Sys.time(), '%B %d, %Y')`"
-editor: visual
 format: 
   html:
     code-fold: false
@@ -101,6 +100,8 @@ This is the second Markdown in our analysis workflow (see [step0_extract_and_eda
     -   *counties* with censored data for `series_complete_pop_pct`; and
 -   Perform any additional transformations on the input data so that it can be easily modeled using non-linear least squares.
 
+---
+
 # R Setup and Required Packages
 
 In this project, the open-source `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language is used to model the COVID-19 percent fully-vaccinated progression in different U.S. counties. `r fontawesome::fa(name = "r-project", fill = "steelblue")` is maintained by an international team of developers who make the language available at [The Comprehensive R Archive Network](https://cran.r-project.org/). Readers interested in reusing our code and reproducing our results should have `r fontawesome::fa(name = "r-project", fill = "steelblue")` installed locally on their machines. `r fontawesome::fa(name = "r-project", fill = "steelblue")` can be installed on a number of different operating systems (see [Windows](https://cran.r-project.org/bin/windows/), [Mac](https://cran.r-project.org/bin/macosx/), and [Linux](https://cran.r-project.org/bin/linux/) for the installation instructions for these systems). We also recommend using the RStudio interface for `r fontawesome::fa(name = "r-project", fill = "steelblue")`. The reader can [download RStudio](http://www.rstudio.com/ide) for free by following the instructions at the link. For non-R users, we recommend the [Hands-on Programming with R](https://rstudio-education.github.io/hopr/packages.html) for a brief overview of the software's functionality. Hereafter, we assume that the reader has an introductory understanding of the `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language.
@@ -125,7 +126,7 @@ pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analy
                gifski, av) # for creating gif and videos
 ```
 
-------------------------------------------------------------------------
+---
 
 # Examining the Number of Unknowns Per State
 
@@ -245,9 +246,7 @@ We can impute the unknown data by utilizing the [CDC's COVID-19 Vaccinations in 
 
 ### The CDC's Vaccination Dataset by State
 
-In the code chunk below, we read the 
-We can impute the unknown data by utilizing the [CDC's COVID-19 Vaccinations in the United States,Jurisdiction dataset](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-Jurisdi/unsk-b7fc) and identify the dates for which the series is non-zero. 
-
+In the code chunk below, we read the We can impute the unknown data by utilizing the [CDC's COVID-19 Vaccinations in the United States,Jurisdiction dataset](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-Jurisdi/unsk-b7fc) and identify the dates for which the series is non-zero.
 
 ```{r cdc_state_data}
 cdc_state_vacc = 
@@ -280,17 +279,16 @@ cdc_state_vacc %>%
   drop_na() %>% 
   # computing the min date for non-zero entries for each state
   summarise(min_date = min(date)) %>% 
-  DT::datatable(options = list(scrollX = '300px'))
+  DT::datatable(options = list(pageLength = 10, autoWidth = TRUE))
 
 ```
 
-
 ### Cumulative Vaccinated by State as Computed from `raw_vaccines_tbl`
 
-In the code chunk below, we perform a "sanity" check to ensure that the data from both CDC datasets (i.e.,[COVID-19 Vaccinations in the United States by County](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh) and [CDC's COVID-19 Vaccinations in the United States,Jurisdiction dataset](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-Jurisdi/unsk-b7fc)) match. To perform the sanity check, we:   
+In the code chunk below, we perform a "sanity" check to ensure that the data from both CDC datasets (i.e.,[COVID-19 Vaccinations in the United States by County](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh) and [CDC's COVID-19 Vaccinations in the United States,Jurisdiction dataset](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-Jurisdi/unsk-b7fc)) match. To perform the sanity check, we:  
 
-_ aggregated the [COVID-19 Vaccinations in the United States by County](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh) dataset, by summing the `series_complete_yes` for all counties within a given state; and  
-- computed the difference using `series_complete_yes_state` `-` `series_complete_yes`, which would result in:  
+- aggregated the [COVID-19 Vaccinations in the United States by County](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh) dataset, by summing the `series_complete_yes` for all counties within a given state; and    
+- computed the difference using `series_complete_yes_state` `-` `series_complete_yes`, which would result in:    
     + `0` if the aggregation of the county dataset results in the same value as the by state data from the CDC
 
 ```{r state_aggregates}
@@ -322,11 +320,12 @@ left_join(
   # and negative means that the CDC's state data has more values (which are not accounted
   # in the summation of our unknowns to known counties)
   mutate(diff_in_datasets = series_complete_yes_state - series_complete_yes) %>% 
-  DT::datatable(options = list(scrollX = '300px'))
+  DT::datatable(options = list(pageLength = 10, autoWidth = TRUE)) %>% 
+  formatRound('series_complete_yes_state', digits = 0) %>% 
+  formatRound('series_complete_yes', digits = 0)
 ```
 
-
-## Fixing/Imputing the Missing “Unknown” Data for TX
+## Fixing/Imputing the Missing "Unknown" Data for TX
 
 ```{r unknown_data_imputation}
 # imputing the data for texas where we assign all the state totals to the unknowns
@@ -379,7 +378,7 @@ y_star_final
 
 ### Counting the Number of Missing by FIPS and State
 
-In the code chunk below, we compute the number of observations (`n`) where the `series_complete_pop_pct` was non-zero. It would not be unusual to see a zero on `2021-01-01` since the [first COVID-19 administered in the U.S.](https://www.wsj.com/articles/covid-19-vaccinations-in-the-u-s-slated-to-begin-monday-11607941806) was on `2020-12-14`. However, we hypothesize that most counties should have vaccinated at least one individual by `2021-02-01`. 
+In the code chunk below, we compute the number of observations (`n`) where the `series_complete_pop_pct` was non-zero. It would not be unusual to see a zero on `2021-01-01` since the [first COVID-19 administered in the U.S.](https://www.wsj.com/articles/covid-19-vaccinations-in-the-u-s-slated-to-begin-monday-11607941806) was on `2020-12-14`. However, we hypothesize that most counties should have vaccinated at least one individual by `2021-02-01`.
 
 ```{r p_matrix_index}
 vaccines = read_rds('data/vaccines.rds')
@@ -411,7 +410,7 @@ fips_incomplete = index_p_matrix$fips[index_incomplete]
 
 ### A Summary of Number of Missing Observations
 
-From the computations above, the distribution of missing observations per county (i.e., ones where there are zero observations per county) is shown below. Note that the top row corresponds to the observed number of missing observations per county, and the bottom row corresponds to its frequency. 
+From the computations above, the distribution of missing observations per county (i.e., ones where there are zero observations per county) is shown below. Note that the top row corresponds to the observed number of missing observations per county, and the bottom row corresponds to its frequency.
 
 ```{r missing_overview_table}
 table(index_p_matrix$num_missing) %>% pander()
@@ -436,7 +435,6 @@ index_p_matrix %>%
        title = 'The number of missing observations per county in the continental US')
 ```
 
-
 ### Missingness by State
 
 In the code chunk below, we compute the median number of missing observations across all counties in a given state. The printout shows the results arranged in a descending order. The table is searchable so that the reader can explore any state they are interested in.
@@ -447,9 +445,8 @@ index_p_matrix %>%
   group_by(recip_state) %>% 
   summarise( median_num_missing = median(num_missing, na.rm = T) ) %>% 
   arrange(desc(median_num_missing)) %>% 
-  DT::datatable()
+  DT::datatable(options = list(pageLength = 10, autoWidth = TRUE))
 ```
-
 
 ### Missingness by County
 
@@ -487,7 +484,6 @@ leaflet() %>% # initializing the leaflet map
   addLegend(position = "bottomright", pal = leaflet_pal, values =  leaflet_sf$num_missing, 
             title = "#Obs Missing", opacity = 1) # legend formatting
 ```
-
 
 ```{r static_map_missing, include=FALSE}
 # Getting the counties map from the urbnmapr package and excluding non-continental US

@@ -1,0 +1,127 @@
+---
+title: "COVID-19 Vaccines by County"
+subtitle: "Step 1: Logistic Growth Curve Modeling"
+author:
+  - name: Longwen Zhao
+    email: longwen.zhao@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
+  - name: Maciej Rysz
+    orcid: 0000-0003-2667-0398
+    email: ryszmw@miamioh.edu
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Fadel M. Megahed
+    orcid: 0000-0003-2194-5110
+    email: fmegahed@miamioh.edu
+    corresponding: true
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Allison Jones-Farmer
+    orcid: 0000-0002-1529-1133
+    email: farmerl2@miamioh.edu
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Steve Rigdon
+    orcid: 0000-0001-7668-0899
+    email: steve.rigdon@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+format: 
+  html:
+    code-fold: false
+    code-tools: true
+    code-download: true
+    code-link: true
+    highlight-style: pygments
+    number-sections: true
+    paged-df: true
+    toc: true
+    toc-float: true
+    code-overflow: wrap
+    include-in-header: structure.tex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  progress = FALSE, 
+  verbose = FALSE,
+  fig.path = "figs/",
+  cache.extra = set.seed(2022), 
+  autodep = TRUE
+)
+
+knitr::dep_auto()
+
+options(qwraps2_markup = "markdown")
+
+# Setting properties for the default theme_bw() behavior for all plots
+if(require(ggplot2) == FALSE) install.packages("ggplot2")
+library(ggplot2) ; theme_set(theme_bw(base_size = 11) + theme(legend.position = 'top')) 
+
+# Setting default color palettes to RColorBrewer Palettes
+if(require(RColorBrewer) == FALSE) install.packages("RColorBrewer")
+scale_colour_discrete = scale_color_brewer(palette = "Dark2")
+```
+
+# Objectives of this Document
+
+This is the second Markdown in our analysis workflow (see [step0_extract_and_eda.html](https://fmegahed.github.io/research/covid_vaccines/step0_extract_and_eda.html) for our first set of analyses). The main objectives of this document are as follows:
+
+-   Construct matrices (the mathematical representation) which separate:
+    -   the $\mathbf{y}^*_i$ = $\begin{bmatrix} u_{i,1} & u_{i,2} & \dots & u_{i,t} \end{bmatrix}$ is a vector containing $t$ observations of the cumulative count of vaccinated, but not allocated, individuals in state $i$. We refer to this matrix as the matrix of unknowns.
+    -   *counties* with complete (i.e., no missing) data for `series_complete_pop_pct`;\
+    -   *counties* with incomplete data for `series_complete_pop_pct`;\
+    -   *counties* with censored data for `series_complete_pop_pct`; and
+-   Perform any additional transformations on the input data so that it can be easily modeled using non-linear least squares.
+
+---
+
+# R Setup and Required Packages
+
+In this project, the open-source `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language is used to model the COVID-19 percent fully-vaccinated progression in different U.S. counties. `r fontawesome::fa(name = "r-project", fill = "steelblue")` is maintained by an international team of developers who make the language available at [The Comprehensive R Archive Network](https://cran.r-project.org/). Readers interested in reusing our code and reproducing our results should have `r fontawesome::fa(name = "r-project", fill = "steelblue")` installed locally on their machines. `r fontawesome::fa(name = "r-project", fill = "steelblue")` can be installed on a number of different operating systems (see [Windows](https://cran.r-project.org/bin/windows/), [Mac](https://cran.r-project.org/bin/macosx/), and [Linux](https://cran.r-project.org/bin/linux/) for the installation instructions for these systems). We also recommend using the RStudio interface for `r fontawesome::fa(name = "r-project", fill = "steelblue")`. The reader can [download RStudio](http://www.rstudio.com/ide) for free by following the instructions at the link. For non-R users, we recommend the [Hands-on Programming with R](https://rstudio-education.github.io/hopr/packages.html) for a brief overview of the software's functionality. Hereafter, we assume that the reader has an introductory understanding of the `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language.
+
+In the code chunk below, we load the packages used to support our analysis. Our input and output files can also be accessed/ downloaded from [fmegahed/vaccines_spatial_and_optimization](https://github.com/fmegahed/vaccines_spatial_and_optimization).
+
+```{r packages, cache=FALSE}
+# create a files directory if it does not exist
+if (!dir.exists('step0_transform_files')) {dir.create('step0_transform_files')}
+
+# Check and install if these packages are not found locally on machine
+if(require(pacman)==FALSE) install.packages("pacman")
+if(require(devtools)==FALSE) install.packages("devtools")
+if(require(urbnmapr)==FALSE) devtools::install_github('UrbanInstitute/urbnmapr')
+if(require(albersusa)==FALSE) devtools::install_github("hrbrmstr/albersusa")
+
+pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analysis
+               fontawesome, rsvg, # for fontawesome icons
+               pander, gt, gtExtras, knitr, DT, # for nicely printed outputs
+               scales, plotly, # for plots
+               urbnmapr, tmap, sf, leaflet, albersusa, tigris, # for maps
+               gifski, av) # for creating gif and videos
+```
