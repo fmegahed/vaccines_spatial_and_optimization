@@ -366,8 +366,7 @@ y_star_final =
     series_complete_yes = map(.x = data, .f = magrittr::extract2, 'series_complete_yes'),
     series_complete_yes_ts = map(.x = series_complete_yes, .f = ts, 
                         start = c(2021, 1), frequency = 12)
-    ) %>% 
-  select(-data)
+    )
 
 write_rds(x= y_star_final, file = 'data/y_star_final.rds')
 
@@ -524,8 +523,7 @@ p_matrix = vaccines %>%
   mutate(
     date = map(.x = data, .f = magrittr::extract2, 'date'),
     series_complete_pop_pct = map(.x = data, .f = magrittr::extract2, 'series_complete_pop_pct')
-    ) %>% 
-  select(-data)
+    )
 
 write_rds(x = p_matrix, file = 'data/p_matrix_final.rds')
 
@@ -543,8 +541,7 @@ comp_p_matrix = vaccines %>%
   mutate(
     date = map(.x = data, .f = magrittr::extract2, 'date'),
     series_complete_pop_pct = map(.x = data, .f = magrittr::extract2, 'series_complete_pop_pct')
-    ) %>% 
-  select(-data)
+    )
 
 write_rds(x = comp_p_matrix, file = 'data/comp_p_matrix_final.rds')
 
