@@ -5,3 +5,5 @@
 data/raw_vaccines_tbl.rds
 step0_extract_and_eda_cache/
 step0_extract_and_eda_files/
+step0_transform_cache/
+step0_transform_files/
