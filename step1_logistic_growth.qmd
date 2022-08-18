@@ -105,7 +105,7 @@ In the code chunk below, we load the packages used to support our analysis. Our 
 
 ```{r packages, cache=FALSE}
 # create a files directory if it does not exist
-if (!dir.exists('step0_transform_files')) {dir.create('step0_transform_files')}
+if (!dir.exists('step1_logistic_growth_files')) {dir.create('step1_logistic_growth_files')}
 
 # Check and install if these packages are not found locally on machine
 if(require(pacman)==FALSE) install.packages("pacman")
@@ -115,7 +115,7 @@ if(require(albersusa)==FALSE) devtools::install_github("hrbrmstr/albersusa")
 
 pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analysis
                fontawesome, rsvg, # for fontawesome icons
-               pander, gt, gtExtras, knitr, DT, # for nicely printed outputs
+               pander, knitr, DT, sparkline, # for nicely printed outputs
                scales, plotly, # for plots
                urbnmapr, tmap, sf, leaflet, albersusa, tigris, # for maps
                gifski, av) # for creating gif and videos
@@ -124,5 +124,107 @@ pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analy
 
 ---
 
-# Fitting the Logistic Growth Curve
+# Fitting the Logistic Growth Curve Model
 
+In the code chunk below, we fit a logistic growth curve for all counties containing no missing data. To fit the curve, we have capitalized on the following two functions from the `stats` package:  
+
+- `nls()`, which determines the nonlinear (weighted) least-squares estimates of the parameters of a nonlinear model; and   
+- `SSlogis`, which is a Self-Starting NLS Logistic Model. It evaluates the logistic function and its gradient. It has an initial attribute that creates initial estimates of the parameter.
+
+Our output is stored to [data/growth_curve_models.rds](https://github.com/fmegahed/vaccines_spatial_and_optimization/blob/main/data/growth_curve_models.rds) and printed in a searchable datatable for the readers' convenience.
+
+```{r nested_models}
+vaccines = read_rds('data/vaccines.rds')
+
+# Computing the expected number of observations (i.e., months of data) per county
+months_from_start = 
+  seq.Date(from = min(vaccines$date), to = max(vaccines$date), by = 'month') %>% 
+  length()
+
+# creating a vector of months from start, which will be our dependent variable representing time
+months_from_start = 1:months_from_start
+
+growth_curve_models = 
+  # reading the p_matrix containing the perc fully vaccinated for each county w/ complete data
+  read_rds('data/p_matrix_final.rds') %>% 
+  # creating four new variables (one for the model and one for each of the phis)
+  # note that we used transmute instead of mutate to only keep the two grouping variables and 
+  # the four variables created in this step to reduce the stored object size
+  transmute(
+    # fitting self-starting logistic growth curve models
+    model = map(
+      .x = data, 
+      .f = function(df){ 
+        nls(series_complete_pop_pct ~ SSlogis(months_from_start, phi1, phi2, phi3), data = df)}
+    ),
+    # extracting the model parameters
+    phi1 = map_dbl( .x = model, .f = function(x) x$m$getPars()[['phi1']] ),
+    phi2 = map_dbl( .x = model, .f = function(x) x$m$getPars()[['phi2']] ),
+    phi3 = map_dbl( .x = model, .f = function(x) x$m$getPars()[['phi3']] )
+  ) %>%
+  # since we have the parameters from the model so we will not store the full model
+  # in our initial experiments this reduced the object size from 321.1 MB to 0.5MB
+  # we are only storing the Phis, recip_state and fips
+  select(-model)
+
+# storing the data
+write_rds(x = growth_curve_models, file = 'data/growth_curve_models.rds')
+
+
+# Code below is used to add a sparklines to the DT datatable output to help
+# visualize the difference in fitted curves across the different counties
+
+### custom_function for spk_line
+spk_line_exp_growth = function(phi1, phi2, phi3, time = months_from_start){
+  lgc_fitted = phi1/(1+exp(-(phi2+phi3*time))) # fitted values 
+  # adding spark lines based on the sparkline package
+  spk_chr(lgc_fitted, type = 'line')
+}
+
+### sparkline to be added to the table
+spark_lines = growth_curve_models %>% 
+  transmute(
+    chart = pmap_chr(.l = list(phi1, phi2, phi3), .f = spk_line_exp_growth)
+  )
+
+# printing the phis in a searchable table for inspection
+growth_curve_models %>%
+  # adding the county name to the print out 
+  left_join(y = vaccines %>% select(fips, recip_county) %>% unique(),
+            by = 'fips') %>% 
+  # moving the county name to after state name for ease of reading the table
+  relocate(recip_county, .after = recip_state) %>% 
+  # adding the sparklines to the printout
+  left_join(y = spark_lines %>% ungroup() %>% select(-recip_state), by = 'fips') %>% 
+  DT::datatable(rownames = FALSE, escape = FALSE, options = list(pageLength = 10, 
+                               # adding the htmlwidget to the code
+                               fnDrawCallback = htmlwidgets::JS(
+                                 '
+function(){
+  HTMLWidgets.staticRender();
+}
+')
+  )) %>% 
+  spk_add_deps()   %>%
+  DT::formatRound(columns = c('phi1', 'phi2', 'phi3'), digits = 1)
+```
+
+---
+
+# Visualizing the Model Outputs
+
+
+
+
+
+
+
+---
+
+# Appendix
+
+In this appendix, we print all the `r fontawesome::fa(name = "r-project", fill = "steelblue")` packages used in our analysis and their versions to assist with reproducing our results/analysis.
+
+```{r sessionInfo}
+pander(sessionInfo(), compact = TRUE) # printing the session info
+```

@@ -405,6 +405,11 @@ index_p_matrix =
 
 index_incomplete = which(index_p_matrix$num_missing > 1)
 fips_incomplete = index_p_matrix$fips[index_incomplete]
+
+# creating indices for complete as well
+# since our total = complete + incomplete + missing
+index_complete = which(index_p_matrix$num_missing <= 1)
+fips_complete = index_p_matrix$fips[index_complete]
 ```
 
 ### A Summary of Number of Missing Observations
@@ -517,7 +522,7 @@ invisible( dev.off() ) # to suppress the unwanted output from dev.off
 ```{r p_matrix}
 p_matrix = vaccines %>% 
   select(recip_state, fips, date, series_complete_pop_pct) %>% 
-  filter(!fips %in% fips_incomplete) %>% 
+  filter(fips %in% fips_complete) %>% 
   group_by(recip_state, fips) %>% 
   nest() %>% 
   mutate(
