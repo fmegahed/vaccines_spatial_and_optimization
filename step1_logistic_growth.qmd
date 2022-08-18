@@ -114,6 +114,7 @@ if(require(urbnmapr)==FALSE) devtools::install_github('UrbanInstitute/urbnmapr')
 if(require(albersusa)==FALSE) devtools::install_github("hrbrmstr/albersusa")
 
 pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analysis
+               car, # for logit function
                fontawesome, rsvg, # for fontawesome icons
                pander, knitr, DT, sparkline, # for nicely printed outputs
                scales, plotly, # for plots
@@ -126,10 +127,7 @@ pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analy
 
 # Fitting the Logistic Growth Curve Model
 
-In the code chunk below, we fit a logistic growth curve for all counties containing no missing data. To fit the curve, we have capitalized on the following two functions from the `stats` package:  
-
-- `nls()`, which determines the nonlinear (weighted) least-squares estimates of the parameters of a nonlinear model; and   
-- `SSlogis`, which is a Self-Starting NLS Logistic Model. It evaluates the logistic function and its gradient. It has an initial attribute that creates initial estimates of the parameter.
+In the code chunk below, we fit a logistic growth curve for all counties containing no missing data. To fit the curve, we have capitalized on the `nls()` function from the `stats` pkg, which determines the nonlinear (weighted) least-squares estimates of the parameters of a nonlinear model. Note that the NLS function requires starting values, and we utilized the approach described in [Modeling Logistic Growth Data in R](https://bscheng.com/2014/05/07/modeling-logistic-growth-data-in-r/) to attain initial values that lead to model convergence. Note that the results attained from that approach were far superior than utilizing the `SSlogis()`, which is a Self-Starting NLS Logistic Model since the latter results led to flat curves (see [covid_vaccines step1_logistic_growth awful fits](https://github.com/fmegahed/vaccines_spatial_and_optimization/commit/6b6f4c263da7c76dede1b2c2cd0f08dc5dba9d75#diff-bf6596371eb0cfec090b9866b6a3fb8041433c8fa4a290b785e3e8ef99b7274a) for details of our computations).
 
 Our output is stored to [data/growth_curve_models.rds](https://github.com/fmegahed/vaccines_spatial_and_optimization/blob/main/data/growth_curve_models.rds) and printed in a searchable datatable for the readers' convenience.
 
@@ -155,12 +153,28 @@ growth_curve_models =
     model = map(
       .x = data, 
       .f = function(df){ 
-        nls(series_complete_pop_pct ~ SSlogis(months_from_start, phi1, phi2, phi3), data = df)}
+        
+        # finding reasonable starting values for the nls model
+        possible_asymptote = max(df$series_complete_pop_pct)
+        
+        lm_fit = lm( logit(series_complete_pop_pct/possible_asymptote) ~ months_from_start,
+                     data = df)
+        
+        phi1_start = possible_asymptote
+        phi2_start = coef(lm_fit)[1]
+        phi3_start = coef(lm_fit)[2]
+        
+        # fitting the nls model
+        nls(series_complete_pop_pct ~ phi1/( 1+exp(- (phi2+phi3*months_from_start) ) ),
+            data = df, 
+            start=list(phi1=phi1_start, phi2=phi2_start, phi3=phi3_start)
+        )
+      }
     ),
     # extracting the model parameters
-    phi1 = map_dbl( .x = model, .f = function(x) x$m$getPars()[['phi1']] ),
-    phi2 = map_dbl( .x = model, .f = function(x) x$m$getPars()[['phi2']] ),
-    phi3 = map_dbl( .x = model, .f = function(x) x$m$getPars()[['phi3']] )
+    phi1 = map_dbl( .x = model, .f = function(x) coef(x)[1] ),
+    phi2 = map_dbl( .x = model, .f = function(x) coef(x)[2] ),
+    phi3 = map_dbl( .x = model, .f = function(x) coef(x)[3] )
   ) %>%
   # since we have the parameters from the model so we will not store the full model
   # in our initial experiments this reduced the object size from 321.1 MB to 0.5MB
@@ -206,7 +220,8 @@ function(){
 ')
   )) %>% 
   spk_add_deps()   %>%
-  DT::formatRound(columns = c('phi1', 'phi2', 'phi3'), digits = 1)
+  DT::formatRound(columns = c('phi1', 'phi2'), digits = 1) %>% 
+  DT::formatRound(columns = c('phi3'), digits = 2)
 ```
 
 ---
