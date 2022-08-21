@@ -48,7 +48,6 @@ author:
         state: MO
         postal-code: 63104
 date: "`r format(Sys.time(), '%B %d, %Y')`"
-editor: visual
 format: 
   html:
     code-fold: false
@@ -92,17 +91,18 @@ scale_colour_discrete = scale_color_brewer(palette = "Dark2")
 
 # Objectives of this Document
 
-The main objectives of this document are as follows:    
+The main objectives of this document are as follows:
 
-  - Provide a scripted and reproducible document that explains how we extracted the covid vaccination data by county and potential predictors that can explain the variability within this data.    
-  - Present our exploratory data analysis for this data
+-   Provide a scripted and reproducible document that explains how we extracted the COVID vaccination data by county and potential predictors that can explain the variability within this data.
+-   Present our exploratory data analysis for this data
 
+---
 
 # R Setup and Required Packages
+
 In this project, the open-source `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language is used to model the COVID-19 percent fully-vaccinated progression in different U.S. counties. `r fontawesome::fa(name = "r-project", fill = "steelblue")` is maintained by an international team of developers who make the language available at [The Comprehensive R Archive Network](https://cran.r-project.org/). Readers interested in reusing our code and reproducing our results should have `r fontawesome::fa(name = "r-project", fill = "steelblue")` installed locally on their machines. `r fontawesome::fa(name = "r-project", fill = "steelblue")` can be installed on a number of different operating systems (see [Windows](https://cran.r-project.org/bin/windows/), [Mac](https://cran.r-project.org/bin/macosx/), and [Linux](https://cran.r-project.org/bin/linux/) for the installation instructions for these systems). We also recommend using the RStudio interface for `r fontawesome::fa(name = "r-project", fill = "steelblue")`. The reader can [download RStudio](http://www.rstudio.com/ide) for free by following the instructions at the link. For non-R users, we recommend the [Hands-on Programming with R](https://rstudio-education.github.io/hopr/packages.html) for a brief overview of the software's functionality. Hereafter, we assume that the reader has an introductory understanding of the `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language.
 
 In the code chunk below, we load the packages used to support our analysis. Our input and output files can also be accessed/ downloaded from [fmegahed/vaccines_spatial_and_optimization](https://github.com/fmegahed/vaccines_spatial_and_optimization).
-
 
 ```{r packages, cache=FALSE}
 # create a files directory if it does not exist
@@ -122,43 +122,38 @@ pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analy
                gifski, av) # for creating gif and videos
 ```
 
-
-
 ---
 
 # Data Extraction
 
-
 ## Extracting the Vaccines Dataset
 
-The CDC has made available a dataset for [COVID-19 Vaccinations in the United States by County](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh). Per the link's description, the dataset captures:  
+The CDC has made available a dataset for [COVID-19 Vaccinations in the United States by County](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh). Per the link's description, the dataset captures:
 
-> Overall US COVID-19 Vaccine administration data at county level. Data represents all vaccine partners including jurisdictional partner clinics, retail pharmacies, long-term care facilities, dialysis centers, Federal Emergency Management Agency and Health Resources and Services Administration partner sites, and federal entity facilities. 
+> Overall US COVID-19 Vaccine administration data at county level. Data represents all vaccine partners including jurisdictional partner clinics, retail pharmacies, long-term care facilities, dialysis centers, Federal Emergency Management Agency and Health Resources and Services Administration partner sites, and federal entity facilities.
 
+We extracted the following data using the code in the chunk below. The descriptions for each variable are available at [CDC's Data Dictionary](https://data.cdc.gov/api/views/8xkx-amqh/files/90cdfb32-19a6-4ffb-8a45-e55cb3954c0d?download=true&filename=DataDictionary_v30_08112022.xlsx), and reproduced below for the reader's convenience.
 
-We extracted the following data using the code in the chunk below. The descriptions for each variable are available at [CDC's Data Dictionary](https://data.cdc.gov/api/views/8xkx-amqh/files/90cdfb32-19a6-4ffb-8a45-e55cb3954c0d?download=true&filename=DataDictionary_v30_08112022.xlsx), and reproduced below for the reader's convenience.   
-
-- `date:` date in year-month-date format.  
-- `fips:` The United States' Federal Information Processing Standards provide a 5-digit numeric code for geographical locations (where the first two digits are reserved to denote the state number and the following three digits are used to codify the county number within the state). The numbers are in alphabetic order, where the first state `01 = Alabama`. 
-- `mmwr_week:` The week of the epidemiologic year as defined by the [Morbidity and Mortality Weekly Report](https://ndc.services.cdc.gov/wp-content/uploads/MMWR_week_overview.pdf).  
-- `recip_county:` The recipient county  
-- `recip_state:` The recipient state   
-- `series_complete_pop_pct:` Percent of people who are fully vaccinated (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction and county  where vaccine recipient lives  
-- `booster_doses_vax_pct:` Percent of  people who are fully vaccinated and have received a booster (or additional) dose.  
-- `svit_ctgy`: The CDC Social Vulnerability Index (SVI) rank categorization where:  
-    + `A` = 0–0.25 SVI rank  
-    + `B` = 0.2501–0.50 SVI rank  
-    + `C` = 0.5001–0.75 SVI rank  
-    + `D` = 0.7501–1.0 SVI rank   
-- `metro_status:` Metro vs. non-metro classification type is an aggregation of the six National Center for Health Statistics (NCHS) Urban-Rural Classification Scheme for Counties.  
-    + `Metro` counties include Large Central Metropolitan, Large Fringe Metropolitan, Medium Metropolitan, and Small Metropolitan classifications.   
-    + `Non-Metro` counties include Micropolitan and Non-Core (Rural) classifications.   
-- `census2019:` 2019 Census Population  
+-   `date:` date in year-month-date format.  
+-   `fips:` The United States' Federal Information Processing Standards provide a 5-digit numeric code for geographical locations (where the first two digits are reserved to denote the state number and the following three digits are used to codify the county number within the state). The numbers are in alphabetic order, where the first state `01 = Alabama`.
+-   `mmwr_week:` The week of the epidemiologic year as defined by the [Morbidity and Mortality Weekly Report](https://ndc.services.cdc.gov/wp-content/uploads/MMWR_week_overview.pdf).  
+-   `recip_county:` The recipient county  
+-   `recip_state:` The recipient state  
+-   `series_complete_pop_pct:` Percent of people who are fully vaccinated (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction and county where vaccine recipient lives  
+-   `booster_doses_vax_pct:` Percent of people who are fully vaccinated and have received a booster (or additional) dose   
+-   `svit_ctgy`: The CDC Social Vulnerability Index (SVI) rank categorization where:
+    -   `A` = 0--0.25 SVI rank  
+    -   `B` = 0.2501--0.50 SVI rank  
+    -   `C` = 0.5001--0.75 SVI rank  
+    -   `D` = 0.7501--1.0 SVI rank  
+-   `metro_status:` Metro vs. non-metro classification type is an aggregation of the six National Center for Health Statistics (NCHS) Urban-Rural Classification Scheme for Counties  
+    -   `Metro` counties include Large Central Metropolitan, Large Fringe Metropolitan, Medium Metropolitan, and Small Metropolitan classifications  
+    -   `Non-Metro` counties include Micropolitan and Non-Core (Rural) classifications.  
+-   `census2019:` 2019 Census Population
 
 In addition, we have capitalized on the [lubridate package](https://lubridate.tidyverse.org/) to extract two numeric variables: `month` and `day_of_month` since we will aggregate the data by month. Initially, we explored two possible days of the month for aggregating the vaccine data:  
-    + `1st of month`, which is the decision we decided to stick with.  
-    + `15th of month`, which captured the percent vaccinated at the middle of the month. We have decided against using this option due to data reporting inconsistencies in Texas (see [time_series_plot_response_15th_of_month.png](figs/time_series_plot_response_15th_of_month.png) for an example).   
-
++ `1st of month`, which is the decision we decided to stick with.  
++ `15th of month`, which captured the percent vaccinated at the middle of the month. We have decided against using this option due to data reporting inconsistencies in Texas (see [time_series_plot_response_15th_of_month.png](figs/time_series_plot_response_15th_of_month.png) for an example).
 
 ```{r get_vaccines}
 csvLink = "https://data.cdc.gov/api/views/8xkx-amqh/rows.csv?accessType=DOWNLOAD"
@@ -222,12 +217,11 @@ paste0('The vaccines data were extracted on ',
      format(vac_csv_extract_time, ' %Z'), '.')
 ```
 
-
 ## Extracting Additional Potential Covariates
 
-While the CDC provides two potential covariates (`svi_ctgy` and `metro_status`) that can explain changes in our response variable (`series_complete_pop_pct`), we have also scraped information for the following predictors:  
+While the CDC provides two potential covariates (`svi_ctgy` and `metro_status`) that can explain changes in our response variable (`series_complete_pop_pct`), we have also scraped information for the following predictors:
 
-- `perc_rep_votes`, which captures the percent of the total county votes received by the Republican Presidential candidate in the 2020 elections. This variable is computed from the [MEDSL Election Returns Data Verse V10.0](https://dataverse.harvard.edu/file.xhtml?fileId=6104822&version=10.0). We downloaded the `countypres_2000-2020.csv` on `r file.info('data/countypres_2000-2020.csv')$mtime %>% lubridate::as_date() %>% format('%B %d, %Y')` at `r file.info('data/countypres_2000-2020.csv')$mtime %>% format('%H:%M:%S %Z')`
+-   `perc_rep_votes`, which captures the percent of the total county votes received by the Republican Presidential candidate in the 2020 elections. This variable is computed from the [MEDSL Election Returns Data Verse V10.0](https://dataverse.harvard.edu/file.xhtml?fileId=6104822&version=10.0). We downloaded the `countypres_2000-2020.csv` on `r file.info('data/countypres_2000-2020.csv')$mtime %>% lubridate::as_date() %>% format('%B %d, %Y')` at `r file.info('data/countypres_2000-2020.csv')$mtime %>% format('%H:%M:%S %Z')`
 
 ```{r elections_data}
 # reading the downloaded CSV
@@ -266,7 +260,6 @@ write_rds(x = vaccines, file = 'data/vaccines.rds')
 ```{r skim}
 skim(vaccines)
 ```
-
 
 ## Response Variable: `series_complete_pop_pct`
 
@@ -332,20 +325,23 @@ knitr::include_graphics('figs/animated_vaccine_map.mp4')
 
 ### Time Series Plots
 
-In the code chunk below, we create a time-series plot of the `series_complete_pop_pct` for a sample of six counties. Note how, the timeseries tend to follow a logistic growth curve. However, the data shows some irregularities in counties in TX and in GA. For viewers interested in viewing the time-series for additional counties, we invite you to interact with our web app hosted at <http://rstudio.fsb.miamioh.edu:3838/megahefm/vaccines/>.  
+In the code chunk below, we create a time-series plot of the `series_complete_pop_pct` for a sample of eight counties. Note how, the timeseries tend to follow a logistic growth curve. For viewers interested in viewing the time-series for additional counties, we invite you to interact with our web app hosted at <http://rstudio.fsb.miamioh.edu:3838/megahefm/vaccines/>.
 
 ```{r ts_plots}
-# a non-random sampling: six select counties 
-# selected to include counties from the four different SVI categories
-# as well as the two urban classifications
-sample_fips = c('04017', '13057', '36061', '39017', '48081', '54009' )
+# selecting two samples per each
+sample_fips = vaccines %>% group_by(svi_ctgy, metro_status) %>% drop_na() %>% 
+  sample_n(size = 1) %>% pull(fips)
+
+write_rds(x = sample_fips, file = 'sample_fips.rds')
 
 # creating the plot
 vaccines %>% 
   filter(fips %in% sample_fips) %>% 
-  mutate(county_name = paste(recip_county, recip_state, sep = ', ') ) %>% 
-  ggplot(aes(x = date, y = series_complete_pop_pct, 
-             group = county_name, color = svi_ctgy,
+  mutate(county_name = paste(recip_county, recip_state, sep = ', ') ) -> 
+  vaccines_sampled 
+  
+vaccines_sampled %>% 
+ggplot(aes(x = date, y = series_complete_pop_pct, color = svi_ctgy,
              shape = metro_status) ) +
   geom_line() +
   geom_point() +
@@ -353,7 +349,10 @@ vaccines %>%
                      breaks = scales::pretty_breaks(n=5), limits = c(0,100) ) +
   scale_x_date(name = 'Date', breaks = scales::pretty_breaks(n = 4)) + 
   scale_color_brewer(palette = 'Dark2') +
-  facet_wrap(~ county_name, ncol = 2) +
+  facet_grid(rows = vars(svi_ctgy), cols = vars(metro_status)) +
+  geom_text(data = vaccines_sampled %>% filter(date == min(date)),  
+            aes(x = lubridate::ymd('2021-08-01'), y = 95, label = county_name), 
+            color = 'gray30' ) +
   theme_bw(base_size = 11) +
   theme(
     legend.position = 'bottom',
@@ -369,7 +368,6 @@ ggsave(filename = 'figs/time_series_plot_response.png',
 ggplotly(plot_sample_y_ts, height = 500)
   
 ```
-
 
 ## Potential Predictors
 
@@ -394,7 +392,6 @@ tm_shape(cty_sf_pred) +
   tm_borders(col = "black", lwd = 0.5)
 invisible( dev.off() ) # to suppress the unwanted output from dev.off
 ```
-
 
 ```{r svi_viz_int}
 # creating an interactive plot for the HTML output
@@ -426,6 +423,7 @@ leaflet() %>% # initializing the leaflet map
     data = leaflet_sf, stroke = FALSE, fillColor = ~leaflet_pal(leaflet_sf$svi_ctgy), # adding the data
     weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7, # adding color specs
     popup = paste(
+      "State:", leaflet_sf$state, '<br>',
       "County:", leaflet_sf$name, '<br>', 
       "SVI Cat:", leaflet_sf$svi_ctgy, '<br>',
       "Metro Status:", leaflet_sf$metro_status, '<br>',
@@ -450,7 +448,6 @@ tm_shape(cty_sf_pred) +
 invisible( dev.off() ) # to suppress the unwanted output from dev.off
 ```
 
-
 ```{r metro_status_int}
 #### Setting the Color Scheme
 leaflet_pal =  colorFactor('Dark2', domain = leaflet_sf$metro_status, na.color = "white")
@@ -463,6 +460,7 @@ leaflet() %>% # initializing the leaflet map
     data = leaflet_sf, stroke = FALSE, fillColor = ~leaflet_pal(leaflet_sf$metro_status), # adding the data
     weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7, # adding color specs
     popup = paste(
+      "State:", leaflet_sf$state, '<br>',
       "County:", leaflet_sf$name, '<br>', 
       "SVI Cat:", leaflet_sf$svi_ctgy, '<br>',
       "Metro Status:", leaflet_sf$metro_status, '<br>',
@@ -511,9 +509,10 @@ leaflet() %>% # initializing the leaflet map
             title = "% Rep Votes", opacity = 1) # legend formatting
 ```
 
----
+------------------------------------------------------------------------
 
 # Appendix
+
 In this appendix, we print all the `r fontawesome::fa(name = "r-project", fill = "steelblue")` packages used in our analysis and their versions to assist with reproducing our results/analysis.
 
 ```{r sessionInfo}

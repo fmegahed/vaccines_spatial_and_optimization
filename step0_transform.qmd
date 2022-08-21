@@ -467,26 +467,34 @@ leaflet_sf =
              ungroup() %>% 
              select(fips, num_missing) %>%
              unique(),
-           by_sp= 'fips', by_df= 'fips')
+           by_sp= 'fips', by_df= 'fips') %>% 
+  mutate(num_missing_disc = 
+           cut(num_missing,
+               breaks = 
+                 c(0, 0.01, 1.01, 4.01, 9.01, 10.01, (1+expected_number_of_obs_per_county)),
+               labels = 
+                 c('0', '1', '2-4', '5-9', '10', '11+')
+               ))
 
 #### Setting the Color Scheme
-leaflet_pal =  colorNumeric('Oranges', 
-                            domain = leaflet_sf$num_missing, 
-                            na.color = "white", reverse = T)
+leaflet_pal =  colorFactor('Paired', 
+                            domain = leaflet_sf$num_missing_disc, 
+                            na.color = "white")
 
 #### The interactive visual
 leaflet() %>% # initializing the leaflet map
   setView(lng = -96, lat = 37.8, zoom = 4) %>% # setting the view on Continental US
   addTiles() %>% # adding the default tiles
   addPolygons(
-    data = leaflet_sf, stroke = FALSE, fillColor = ~leaflet_pal(leaflet_sf$num_missing), # adding the data
+    data = leaflet_sf, stroke = FALSE, fillColor = ~leaflet_pal(leaflet_sf$num_missing_disc), # adding the data
     weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7, # adding color specs
     popup = paste(
+      "State:", leaflet_sf$state, '<br>',
       "County:", leaflet_sf$name, '<br>', 
       'Num Missing:', leaflet_sf$num_missing)
   ) %>% #pop-up Menu
-  addLegend(position = "bottomright", pal = leaflet_pal, values =  leaflet_sf$num_missing, 
-            title = "#Obs Missing", opacity = 1) # legend formatting
+  addLegend(position = "bottomright", pal = leaflet_pal, values =  leaflet_sf$num_missing_disc, 
+            title = "# Missing Group", opacity = 1) # legend formatting
 ```
 
 ```{r static_map_missing, include=FALSE}
@@ -503,17 +511,23 @@ cty_sf_missing = left_join(
   x = counties_sf,
   y = index_p_matrix %>% ungroup() %>% select(fips, num_missing),
   by = c("county_fips" = "fips")
-)
+) %>% 
+  mutate(num_missing_disc = 
+           cut(num_missing,
+               breaks = 
+                 c(0, 0.01, 1.01, 4.01, 9.01, 10.01, (1+expected_number_of_obs_per_county)),
+               labels = 
+                 c('0', '1', '2-4', '5-9', '10', '11+')
+           ))
 
 # creating static visuals to be potentially used in our paper
 # not included in the output for the Markdown/Quarto since we are including
 # the interactive plot
 png(filename = 'figs/county_missing_obs.png', width = 1366, height = 768, pointsize = 16)
 tm_shape(cty_sf_missing) + 
-  tm_polygons('num_missing', title = '#Obs Missing', palette = "seq") +
+  tm_polygons('num_missing_disc', title = '#Obs Missing', palette = "Paired") +
   tm_shape(states_sf) + 
-  tm_borders(col = "black", lwd = 0.5) +
-  tm_layout(aes.palette = list(seq = "-Oranges"))
+  tm_borders(col = "black", lwd = 0.5)
 invisible( dev.off() ) # to suppress the unwanted output from dev.off
 ```
 
