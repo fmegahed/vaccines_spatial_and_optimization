@@ -403,12 +403,12 @@ index_p_matrix =
   count(fips) %>% 
   mutate(num_missing = expected_number_of_obs_per_county - n)
 
-index_incomplete = which(index_p_matrix$num_missing > 1)
+index_incomplete = which(index_p_matrix$num_missing > 2)
 fips_incomplete = index_p_matrix$fips[index_incomplete]
 
 # creating indices for complete as well
 # since our total = complete + incomplete + missing
-index_complete = which(index_p_matrix$num_missing <= 1)
+index_complete = which(index_p_matrix$num_missing <= 2)
 fips_complete = index_p_matrix$fips[index_complete]
 ```
 
