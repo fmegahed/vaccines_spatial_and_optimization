@@ -377,7 +377,7 @@ y_star_final
 
 ### Counting the Number of Missing by FIPS and State
 
-In the code chunk below, we compute the number of observations (`n`) where the `series_complete_pop_pct` was non-zero. It would not be unusual to see a zero on `2021-01-01` since the [first COVID-19 administered in the U.S.](https://www.wsj.com/articles/covid-19-vaccinations-in-the-u-s-slated-to-begin-monday-11607941806) was on `2020-12-14`. However, we hypothesize that most counties should have vaccinated at least one individual by `2021-02-01`.
+In the code chunk below, we compute the number of observations (`n`) where the `series_complete_pop_pct` was non-zero. We expected to see a zero on `2021-01-01` since the [first COVID-19 administered in the U.S.](https://www.wsj.com/articles/covid-19-vaccinations-in-the-u-s-slated-to-begin-monday-11607941806) was on `2020-12-14`, and we are looking at the percent of fully vaccinated individuals (i.e., two-doses of a two-dose vaccine since the [Johnson and Johnson 1-dose vaccine was approved on February 27, 2021](https://www.fda.gov/emergency-preparedness-and-response/coronavirus-disease-2019-covid-19/janssen-covid-19-vaccine)). Thus, we hypothesize that most counties should have vaccinated at least one individual by `2021-02-01`.
 
 ```{r p_matrix_index}
 vaccines = read_rds('data/vaccines.rds')
@@ -403,18 +403,18 @@ index_p_matrix =
   count(fips) %>% 
   mutate(num_missing = expected_number_of_obs_per_county - n)
 
-index_incomplete = which(index_p_matrix$num_missing > 2)
+index_incomplete = which(index_p_matrix$num_missing > 1)
 fips_incomplete = index_p_matrix$fips[index_incomplete]
 
 # creating indices for complete as well
 # since our total = complete + incomplete + missing
-index_complete = which(index_p_matrix$num_missing <= 2)
+index_complete = which(index_p_matrix$num_missing <= 1)
 fips_complete = index_p_matrix$fips[index_complete]
 ```
 
 ### A Summary of Number of Missing Observations
 
-From the computations above, the distribution of missing observations per county (i.e., ones where there are zero observations per county) is shown below. Note that the top row corresponds to the observed number of missing observations per county, and the bottom row corresponds to its frequency.
+From the computations above, the distribution of missing observations per county (i.e., ones where there are zero observations per county) is shown below. Note that the top row corresponds to the observed number of missing observations per county, and the bottom row corresponds to its frequency. Note that we expected most counties to start having data from February 1, 2022 (i.e., `num_missing` = 1) since residents would not have been able to take their second dose prior to mid-January.
 
 ```{r missing_overview_table}
 table(index_p_matrix$num_missing) %>% pander()

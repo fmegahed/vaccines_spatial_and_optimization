@@ -117,7 +117,7 @@ pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analy
                car, # for logit function
                fontawesome, rsvg, # for fontawesome icons
                pander, knitr, DT, sparkline, # for nicely printed outputs
-               scales, plotly, # for plots
+               scales, plotly, glue, # for plots
                urbnmapr, tmap, sf, leaflet, albersusa, tigris, # for maps
                gifski, av) # for creating gif and videos
 ```
@@ -129,7 +129,8 @@ pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analy
 
 In the code chunk below, we fit a logistic growth curve for all counties containing no missing data. To fit the curve, we have capitalized on the `nls()` function from the `stats` pkg, which determines the nonlinear (weighted) least-squares estimates of the parameters of a nonlinear model. Note that the NLS function requires starting values, and we utilized the approach described in [Modeling Logistic Growth Data in R](https://bscheng.com/2014/05/07/modeling-logistic-growth-data-in-r/) to attain initial values that lead to model convergence. Note that the results attained from that approach were far superior than utilizing the `SSlogis()`, which is a Self-Starting NLS Logistic Model since the latter results led to flat curves (see [covid_vaccines step1_logistic_growth awful fits](https://github.com/fmegahed/vaccines_spatial_and_optimization/commit/6b6f4c263da7c76dede1b2c2cd0f08dc5dba9d75#diff-bf6596371eb0cfec090b9866b6a3fb8041433c8fa4a290b785e3e8ef99b7274a) for details of our computations).
 
-Our output is stored to [data/growth_curve_models.rds](https://github.com/fmegahed/vaccines_spatial_and_optimization/blob/main/data/growth_curve_models.rds) and printed in a searchable datatable for the readers' convenience.
+Our output is stored to [data/growth_curve_models.rds](https://github.com/fmegahed/vaccines_spatial_and_optimization/blob/main/data/growth_curve_models.rds) and printed in a searchable datatable for the readers' convenience. **Note that in our exploratory analysis, we have also examined adding the 395 counties which had no vaccination data prior to March 01, 2022. However, the results were similar. Hence, we include in our analysis the 2386 counties with complete data beginning February 01, 2022.** To see our results from our explanatory analysis, the reader is invited to see [step0_transform and step1 results while including the 395 counties](https://github.com/fmegahed/vaccines_spatial_and_optimization/commit/5921237601e0f0296c64063a06fb582c7373a35d). 
+
 
 ```{r nested_models}
 vaccines = read_rds('data/vaccines.rds')
@@ -239,8 +240,7 @@ Based on the `growth_curve_models` above, the averages of the MAE, MSE and RMSE 
 
 # Visualizing the Model Outputs
 
-
-```{r viz_model}
+```{r viz_model, out.height='800px', out.width='800px'}
 sample_fips = read_rds(file = 'sample_fips.rds')
 
 # sampling the original data
@@ -256,25 +256,120 @@ vaccines %>%
 # sampling the growth_curve data
 fitted_tbl = 
   growth_curve_models %>% 
-  filter(fips %in% sample_fips) %>% 
-  select(-c(bic:rmse)) %>% 
-  transmute(
+  filter(fips %in% sample_fips) %>%
+  mutate(
     months_from_start = list(months_from_start),
     fitted_values = pmap(.l = list(phi1, phi2, phi3, months_from_start),
                          .f = function(x,y,z, m) x/(1+exp(-(y+z*m)))  ) )
 
-# plotting (to be continued)
+# paramaters for plotting
 colors_brewer = RColorBrewer::brewer.pal(n = 8, name = 'Dark2')
+cols = c("A" = colors_brewer[1], 'B' = colors_brewer[2], 
+         'C' = colors_brewer[3], 'D' = colors_brewer[4])
+shapes = c("Metro" = 19, 'Non-metro' = 17)
 
-cols = c("Actual"= colors_brewer[1], 'Logistic Growth Curve Fitted' = colors_brewer[2])
+# constructing a tibble which contains all plots
+combined_plots = 
+  # joining the data
+  left_join(vaccines_sampled, fitted_tbl, by = 'fips') %>% 
+  ungroup() %>%
+  # making the data longer
+  unnest(cols = c(series_complete_pop_pct, months_from_start, fitted_values)) %>% 
+  # grouping and computing the months from start for our dataset
+  # it will repeat for each fips due to grouping
+  group_by(fips) %>% 
+  # creating a dates column and converting the MAE column to character
+  mutate(dates_from_start = seq.Date(from = min(vaccines$date),
+                                      to = max(vaccines$date),
+                                      by = 'months'),
+         svi_ctgy = as.character(svi_ctgy),
+         metro_status = as.character(metro_status),
+         mae = ifelse(is.na(mae), 'No Fitted Model', as.character(round(mae, digits = 2)))) %>% 
+  ungroup() %>% 
+  # so it follows the same order as the TS plots in 4.2.2. in 
+  # https://fmegahed.github.io/research/covid_vaccines/step0_extract_and_eda.html#time-series-plots
+  group_by(svi_ctgy, metro_status) %>% 
+  arrange(svi_ctgy, metro_status) %>% 
+  ungroup() %>% 
+  # creating a nested list with variables to be used in the plot
+  nest(
+    data = c(perc_rep_votes, svi_ctgy, metro_status,
+             months_from_start, dates_from_start,
+             series_complete_pop_pct, fitted_values) 
+  ) %>% 
+  # storing each plot in a variable titled 'plot'
+  mutate(
+    # creating the plot
+    plot = pmap(
+      list(a = data, b = county_name, c = mae),
+      function(a, b, c){
+        ggplot(data = a, aes(x = dates_from_start, color = svi_ctgy, shape = metro_status)) +
+          geom_point(aes(y = series_complete_pop_pct),  size = 2)+
+          geom_line(aes(y = fitted_values), size=1) +
+          scale_color_manual(values = cols) +
+          scale_shape_manual(values = shapes) +
+          labs(x = 'Months from Start', y = '% Vaccinated', 
+               title = glue('{b} (MAE: {c})') )  +
+          scale_x_date(breaks = scales::pretty_breaks(n= 6)) +
+          scale_y_continuous(breaks = scales::pretty_breaks(n= 5), limits = c(0,100)) +
+          theme_bw(base_size = 10) +
+          theme(legend.position = 'bottom', 
+                legend.title=element_text(size=9),
+                legend.text=element_text(size=8)) 
+      }
+    )
+  )
 
-# To be continued
+# printing the tabsets programmatically
+names(combined_plots$plot) = combined_plots$county_name
+
+p_combined = ggpubr::ggarrange(plotlist = combined_plots$plot, 
+                               ncol = 2,
+                               nrow = 4,
+                               common.legend = T)
+
+ggsave(filename = 'figs/time_series_plot_response_and_fitted.png', 
+       plot = p_combined,
+       width=10, height=6)
+
+# an interactive figure shown here
+fig_list = iwalk(combined_plots$plot, ~ .x)
+p_interactive = subplot(fig_list, nrows = 4, margin = 0.05, 
+                        shareX = TRUE, shareY = TRUE)
+
+p_interactive %>% 
+  layout(
+    height = 800, width = 800,
+    title = 'The Use of Logistic Growth Curves on Complete Data',
+    annotations = list(
+      list(x = 0 , y = 1.05, showarrow = F, 
+           text = paste0(names(combined_plots$plot)[1], ' (MAE:', combined_plots$mae[1], ')'),
+           xref='paper', yref='paper'),
+      list(x = 1 , y = 1.05, showarrow = F, 
+           text = paste0(names(combined_plots$plot)[2], ' (MAE:', combined_plots$mae[2], ')'),
+           xref='paper', yref='paper'),
+      list(x = 0 , y = 0.75, showarrow = F, 
+           text = paste0(names(combined_plots$plot)[3], ' (MAE:', combined_plots$mae[3], ')'),
+           xref='paper', yref='paper'),
+      list(x = 1 , y = 0.75, showarrow = F, 
+           text = paste0(names(combined_plots$plot)[4], ' (MAE:', combined_plots$mae[4], ')'),
+           xref='paper', yref='paper'),
+      list(x = 0 , y = 0.48, showarrow = F, 
+           text = paste0(names(combined_plots$plot)[5], ' (MAE:', combined_plots$mae[5], ')'),
+           xref='paper', yref='paper'),
+      list(x = 1 , y = 0.48, showarrow = F, 
+           text = paste0(names(combined_plots$plot)[6], ' (MAE:', combined_plots$mae[6], ')'),
+           xref='paper', yref='paper'),
+      list(x = 0 , y = 0.2, showarrow = F, 
+           text = paste0(names(combined_plots$plot)[7], ' (MAE:', combined_plots$mae[7], ')'),
+           xref='paper', yref='paper'),
+      list(x = 1 , y = 0.2, showarrow = F, 
+           text = paste0(names(combined_plots$plot)[8], ' (MAE:', combined_plots$mae[8], ')'),
+           xref='paper', yref='paper')
+    )
+  )
 
 ```
-
-
-
-
 
 
 ---
