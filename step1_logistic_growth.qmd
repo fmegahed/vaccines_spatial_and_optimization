@@ -174,7 +174,15 @@ growth_curve_models =
     # extracting the model parameters
     phi1 = map_dbl( .x = model, .f = function(x) coef(x)[1] ),
     phi2 = map_dbl( .x = model, .f = function(x) coef(x)[2] ),
-    phi3 = map_dbl( .x = model, .f = function(x) coef(x)[3] )
+    phi3 = map_dbl( .x = model, .f = function(x) coef(x)[3] ),
+    
+    # computing goodness of fit
+    bic = map_dbl( .x = model, .f = function(x) BIC(x) ),
+    
+    # examining the errors
+    mae = map_dbl( .x = model, .f = function(x)  residuals(x) %>% abs() %>% mean() ),
+    mse = map_dbl( .x = model, .f = function(x) mean( residuals(x)^2 ) ),
+    rmse = map_dbl( .x = model, .f = function(x) mean( residuals(x)^2 ) %>% sqrt() )
   ) %>%
   # since we have the parameters from the model so we will not store the full model
   # in our initial experiments this reduced the object size from 321.1 MB to 0.5MB
@@ -220,14 +228,49 @@ function(){
 ')
   )) %>% 
   spk_add_deps()   %>%
-  DT::formatRound(columns = c('phi1', 'phi2'), digits = 1) %>% 
-  DT::formatRound(columns = c('phi3'), digits = 2)
+  DT::formatRound(columns = c('phi1', 'phi2', 'bic'), digits = 1) %>% 
+  DT::formatRound(columns = c('phi3', 'mae', 'mse', 'rmse'), digits = 2)
 ```
+
+Based on the `growth_curve_models` above, the averages of the MAE, MSE and RMSE for the `r nrow(growth_curve_models)` counties are: `r round( mean(growth_curve_models$mae), digits = 2 )`, `r round( mean(growth_curve_models$mse), digits = 2 )`, and `r round( mean(growth_curve_models$rmse), digits = 2 )`, respectively. 
+
 
 ---
 
 # Visualizing the Model Outputs
 
+
+```{r viz_model}
+sample_fips = read_rds(file = 'sample_fips.rds')
+
+# sampling the original data
+vaccines %>% 
+  filter(fips %in% sample_fips) %>% 
+  mutate(county_name = paste(recip_county, recip_state, sep = ', ') ) %>% 
+  group_by(county_name, fips, ) %>% 
+  select(-c(date, mmwr_week, recip_county, recip_state, booster_doses_vax_pct, census2019) ) %>% 
+  mutate(series_complete_pop_pct = list(series_complete_pop_pct)) %>% 
+  unique() -> 
+  vaccines_sampled 
+
+# sampling the growth_curve data
+fitted_tbl = 
+  growth_curve_models %>% 
+  filter(fips %in% sample_fips) %>% 
+  select(-c(bic:rmse)) %>% 
+  transmute(
+    months_from_start = list(months_from_start),
+    fitted_values = pmap(.l = list(phi1, phi2, phi3, months_from_start),
+                         .f = function(x,y,z, m) x/(1+exp(-(y+z*m)))  ) )
+
+# plotting (to be continued)
+colors_brewer = RColorBrewer::brewer.pal(n = 8, name = 'Dark2')
+
+cols = c("Actual"= colors_brewer[1], 'Logistic Growth Curve Fitted' = colors_brewer[2])
+
+# To be continued
+
+```
 
 
 
