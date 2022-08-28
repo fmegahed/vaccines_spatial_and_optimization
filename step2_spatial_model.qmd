@@ -188,8 +188,6 @@ nb = poly2nb(counties_sf$geometry)
 # based on https://www.paulamoraga.com/book-geospatial/sec-arealdatatheory.html
 nb2INLA("data/map.adj", nb)
 g = inla.read.graph(filename = "data/map.adj")
-
-
 ```
 
 ## Model 1
@@ -579,11 +577,6 @@ tm_shape(counties_sf) +
 invisible( dev.off() ) # to suppress the unwanted output from dev.off
 ```
 
-
-## The Corresponding Logistic Growth Curves
-
-<span style="color:red">Will add these at some point in time this week.</span>
-
 ---
 
 # Evaluating the Models' Predictive Performance 
@@ -612,7 +605,12 @@ Phi_hat_tbl = tibble(fips = inla_tbl$fips,
                      phi3 = inla_tbl$phi3,
                      phi3_hat = phi3_hat_vec)
 
-Phi_hat_tbl
+Phi_hat_tbl %>%
+  datatable() %>% 
+  formatRound(columns = c('phi1', 'phi1_hat', 'phi2',
+                          'phi2_hat', 'phi3', 'phi3_hat'))
+
+write_rds(x = Phi_hat_tbl, file = 'data/phi_hat_tbl.rds')
 ```
 
 
@@ -738,9 +736,11 @@ pred_acc_per_county %>%
   group_by(state) %>% 
   summarise(q1_mae_actuals = quantile(mae_actuals, probs =  0.25),
             median_mae_actuals = median(mae_actuals),
+            avg_mae_actuals = mean(mae_actuals),
             q3_mae_actuals = quantile(mae_actuals, probs =  0.75),
             q1_mae_lgc = quantile(mae_lgc, probs =  0.25),
             median_mae_lgc = median(mae_lgc),
+            avg_mae_lgc = mean(mae_lgc),
             q3_mae_lgc = quantile(mae_lgc, probs =  0.75)) -> pred_acc_per_state
 
 # saving the data
@@ -768,6 +768,255 @@ tm_shape(states_sf) +
 ```
 
 
+#### Correlation with the State Unknowns $\mathbf{Y}^*$
+
+Based on the state map in the previous subsection, we hypothesize that some of the large errors can be possibly explained by a larger percent of vaccinated but not assigned to a county individuals within a given state. In the code chunk below, we perform the required data processing/transformations to examine the correlation within each state. 
+
+```{r mae_corr_unknowns}
+# count of unknowns per state
+y_star = read_rds('data/y_star_final.rds') %>% 
+  rename(unknown_counts = series_complete_yes)
+
+# computing total count of vaccinations per state
+cdc_state_vacc = 
+  read_csv('https://data.cdc.gov/api/views/unsk-b7fc/rows.csv?accessType=DOWNLOAD') %>% 
+  # converting names to lower case
+  clean_names() %>% 
+  # selecting columns of interest
+  dplyr::select(date:location, 
+         series_complete_yes) %>% 
+  rename(
+    # renaming the location column to recip_state to match our earlier data
+    recip_state = location,
+    # renaming series_complete_yes to a more descriptive name
+    total_vacc_per_state = series_complete_yes) %>% 
+  # converting the date column to date and creating the day_of_month variable
+  mutate(date = mdy(date), day_of_month = day(date)) %>% 
+  # filtering the data to the continental U.S. and first day of the month
+  filter(!recip_state %in% c('AK', 'AS', 'FM', 'GU', 'HI', 
+                             'MH', 'MP', 'PR', 'PW', 'UNK', 'VI',
+                             'BP2', 'DD2', 'IH2', 'LTC', 'RP', 'US', 'VA2') &
+        day_of_month == 1) %>% 
+  # arranging the data in ascending order by date and state
+  arrange(date, recip_state) %>% 
+  dplyr::select(recip_state, total_vacc_per_state) %>% 
+  nest(total_vacc_per_state = total_vacc_per_state)
+
+
+# the required data for the comparison
+
+## computing the percent unknowns from the total vaccinated in the state
+state_comparison_tbl = 
+  left_join(x = cdc_state_vacc,
+            y = y_star %>% ungroup() %>% dplyr::select(recip_state, unknown_counts),
+            by = 'recip_state') %>% 
+  mutate(percent_unknown = 
+           map2(
+             .x = unknown_counts, .y= total_vacc_per_state,
+             .f = function(x,y){100*x/(y)} )
+  )
+
+## the median absolute error per state and time
+# note that it is computed on perc vaccinated (not accounting for unknowns)
+pred_acc_median_state = 
+  # reading the pred per county, selecting columns of interest and ungroup
+  read_rds('data/pred_acc_per_county.rds') %>%  
+  dplyr::select( c(fips, county_name, actuals, spatial_fitted)) %>% 
+  ungroup() %>% 
+  # extracting state name and computing the absolute error
+  mutate(
+    recip_state = str_sub(county_name, start = -2),
+    abs_error = map2(.x = actuals, .y= spatial_fitted, 
+                      .f = function(x,y){ abs(x - y) } )
+  ) %>% 
+  # unnesting the abs_error
+  unnest(abs_error) %>% 
+  # grouping by recip_state and county_name so we can count the number of rows
+  # in each county
+  group_by(recip_state, county_name) %>% 
+  # counting the months in each county
+  mutate(months_from_start = row_number() ) %>% 
+  # ungroup and group by both the state and time
+  ungroup() %>% group_by(recip_state, months_from_start) %>% 
+  # a summary of the absolute error over time per state
+  summarise(median_abs_error = round(median(abs_error), digits = 3) )
+
+# printing the obtained median absolute error for a sanity check
+pred_acc_median_state %>% DT::datatable()
+
+# left joining with the state_comparison table after nesting the output
+cor_tbl = 
+  # left joining with the original state_comparison_tbl
+  # with a nested version of the pred_acc_median_state so they are similar shape/size
+  left_join(
+    x = state_comparison_tbl %>% dplyr::select(c(recip_state, percent_unknown)) %>% ungroup(),
+    y= pred_acc_median_state %>% ungroup() %>% 
+      dplyr::select( c(recip_state, median_abs_error ) ) %>% 
+      group_by(recip_state) %>% 
+      nest(median_abs_error = median_abs_error),
+    by = 'recip_state') %>% 
+  mutate(
+    # removing INF values from not having state totals prior to April 2021
+    percent_unknown = map(.x = percent_unknown, .f = function(x){
+      x = as.numeric( unlist(x) )
+      x = x[is.finite(x)]
+      return(x)
+    }),
+    # making the length of the median_abs_error consistent with the perc_unknown
+    median_abs_error = map2(.x = median_abs_error, .y = percent_unknown,
+                            .f = function(x,y){
+                              x = as.numeric(unlist(x))
+                              y = as.numeric(unlist(y))
+                              len_x = length(x)
+                              len_y = length(y)
+                              diff_len = len_x - len_y
+                              if(diff_len > 0){
+                                x = x[-c(1:diff_len)]
+                              }
+                              return(x)
+                            }) ) %>% 
+  # removing TX since we had no baseline for most of its data
+  filter(recip_state != 'TX') %>% 
+  # computing the correlation
+  mutate(
+    max_perc_unknown = map_dbl(.x = percent_unknown, .f = max) %>% round(digits = 2),
+    corr = map2_dbl(.x = percent_unknown, .y = median_abs_error, .f = cor) %>% 
+      round(digits = 3)
+  )
+
+cor_tbl %>% 
+  dplyr::select(c(recip_state, max_perc_unknown, corr)) %>% 
+  datatable()
+
+write_rds(x = pred_acc_median_state, file = 'data/pred_acc_median_state.rds')
+write_rds(x = cor_tbl, file = 'data/cor_tbl.rds')
+```
+
+## The Logistic Growth Curves for our Sample FIPS
+
+Here, we reproduce the graphs constructed in [Sec 4 of step1_logistic_growth.html](https://fmegahed.github.io/research/covid_vaccines/step1_logistic_growth.html#visualizing-the-model-outputs) with the addition of an extra line for the curves obtained from our spatial model. One difference is that the `color` is used to show the curves fitted from the exponential growth model and the spatial model instead of the `svi_ctgy`. 
+
+```{r sample_curves_actual_lgc_spatial, fig.height=11, fig.width=8}
+sample_fips = read_rds(file = 'sample_fips.rds')
+vaccines = read_rds(file = 'data/vaccines.rds')
+
+# sampling the original data
+vaccines %>% 
+  filter(fips %in% sample_fips) %>% 
+  mutate(county_name = paste(recip_county, recip_state, sep = ', ') ) %>% 
+  group_by(county_name, fips, ) %>% 
+  dplyr::select(
+    -c(date, mmwr_week, recip_county, recip_state, booster_doses_vax_pct, census2019) ) %>% 
+  mutate(series_complete_pop_pct = list(series_complete_pop_pct)) %>% 
+  unique() -> 
+  vaccines_sampled 
+
+
+# constructing the viz_tbl
+## without imputed counties
+viz_tbl = read_rds('data/pred_acc_per_county.rds') %>% 
+  ungroup() %>% 
+  filter(fips %in% sample_fips) %>% 
+  dplyr::select(fips, county_name, actuals, lgc_fitted, spatial_fitted)
+
+## a tbl for imputed counties
+imputed_counties = 
+  Phi_hat_tbl %>% filter(fips %in% sample_fips & !fips %in% viz_tbl$fips)
+
+imputed_tbl = 
+ read_rds("data/vaccines.rds") %>%
+  dplyr::select(fips,svi_ctgy, metro_status, perc_rep_votes, series_complete_pop_pct) %>% 
+  right_join(
+    imputed_counties,
+    by = 'fips') %>% 
+  ungroup() %>% 
+  group_by(fips) %>% 
+  nest(data = series_complete_pop_pct) %>%  
+  mutate(
+    actuals = map(.x = data, .f = function(x) x$series_complete_pop_pct),
+    lgc_fitted = pmap(list(phi1, phi2, phi3), .f = lgc_fit),
+    spatial_fitted = pmap(list(phi1_hat, phi2_hat, phi3_hat), .f = lgc_fit)
+    ) %>% 
+  dplyr::select(colnames(viz_tbl))
+
+# combining the not imputed and imputed counties together
+viz_tbl = bind_rows(viz_tbl, imputed_tbl)
+
+# paramaters for plotting
+colors_brewer = RColorBrewer::brewer.pal(n = 8, name = 'Paired')
+cols = c("lgc_fitted" = colors_brewer[1], 'spatial_fitted' = colors_brewer[2])
+shapes = c("Metro" = 19, 'Non-metro' = 17)
+lines = c('lgc_fitted' = 'longdash', 'spatial_fitted' = 'dotdash')
+
+# constructing a tibble which contains all plots
+combined_plots = 
+  # joining the data
+  left_join(x = vaccines_sampled %>%
+              ungroup() %>% dplyr::select(-c(county_name, series_complete_pop_pct)) ,
+            y = viz_tbl %>% ungroup(), by = 'fips') %>%
+  group_by(fips) %>% 
+  mutate(months_from_start = list(months_from_start)) %>% 
+  ungroup() %>%
+  # making the data longer
+  unnest(cols = c(months_from_start, actuals, lgc_fitted, spatial_fitted)) %>% 
+  # grouping and computing the months from start for our dataset
+  # it will repeat for each fips due to grouping
+  group_by(fips) %>% 
+  # creating a dates column and converting the MAE column to character
+  mutate(dates_from_start = seq.Date(from = min(vaccines$date),
+                                     to = max(vaccines$date),
+                                     by = 'months'),
+         svi_ctgy = as.character(svi_ctgy),
+         metro_status = as.character(metro_status)) %>% 
+  ungroup() %>% 
+  # so it follows the same order as the TS plots in 4.2.2. in 
+  # https://fmegahed.github.io/research/covid_vaccines/step0_extract_and_eda.html#time-series-plots
+  group_by(svi_ctgy, metro_status) %>% 
+  arrange(svi_ctgy, metro_status) %>% 
+  ungroup() %>% 
+  # creating a nested list with variables to be used in the plot
+  nest(
+    data = c(perc_rep_votes, svi_ctgy, metro_status,
+             months_from_start, dates_from_start,
+             actuals, lgc_fitted, spatial_fitted) 
+  ) %>%
+  # storing each plot in a variable titled 'plot'
+  mutate(
+    # creating the plot
+    plot = map2(
+      .x= data, .y = county_name, 
+      .f = function(a, b){
+        df = a %>% pivot_longer( cols = c(lgc_fitted, spatial_fitted) )
+        
+        ggplot(data = df, aes(x = dates_from_start, color = name, shape = metro_status,
+                              linetype = name)) +
+          geom_point(aes(y = actuals),  color = 'black', size = 2)+
+          geom_line(aes(y = value), size=1) +
+          scale_color_manual(values = cols) +
+          scale_shape_manual(values = shapes) +
+          labs(x = 'Months from Start', y = '% Vaccinated', 
+               title = paste(b) )  +
+          scale_x_date(breaks = scales::pretty_breaks(n= 6)) +
+          scale_y_continuous(breaks = scales::pretty_breaks(n= 5), limits = c(0,100)) +
+          theme_bw(base_size = 10) +
+          theme(legend.position = 'bottom', 
+                legend.title=element_text(size=9),
+                legend.text=element_text(size=8)) 
+      }
+    )
+  )
+
+# printing the tabsets programmatically
+names(combined_plots$plot) = combined_plots$county_name
+
+p_combined = ggpubr::ggarrange(plotlist = combined_plots$plot, 
+                               ncol = 2,
+                               nrow = 4,
+                               common.legend = T)
+
+p_combined
+
+```
 
 
 ---
