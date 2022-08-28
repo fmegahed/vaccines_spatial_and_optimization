@@ -525,6 +525,7 @@ cty_sf_missing = left_join(
 # the interactive plot
 png(filename = 'figs/county_missing_obs.png', width = 1366, height = 768, pointsize = 16)
 tm_shape(cty_sf_missing) + 
+  tm_borders(col = "gray80", lwd = 0.15) +
   tm_polygons('num_missing_disc', title = '#Obs Missing', palette = "Paired") +
   tm_shape(states_sf) + 
   tm_borders(col = "black", lwd = 0.5)

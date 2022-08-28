@@ -387,6 +387,7 @@ cty_sf_pred = left_join(
 # creating static visuals to be potentially used in our paper
 png(filename = 'figs/svi_viz.png', width = 1366, height = 768, pointsize = 16)
 tm_shape(cty_sf_pred) + 
+  tm_borders(col = "gray80", lwd = 0.15) +
   tm_polygons('svi_ctgy', title = 'SVI Category', palette = "YlOrRd") +
   tm_shape(states_sf) + 
   tm_borders(col = "black", lwd = 0.5)
@@ -442,6 +443,7 @@ leaflet() %>% # initializing the leaflet map
 # the interactive plot
 png(filename = 'figs/metro_status.png', width = 1366, height = 768, pointsize = 16)
 tm_shape(cty_sf_pred) + 
+  tm_borders(col = "gray80", lwd = 0.15) +
   tm_polygons('metro_status', title = 'Metro Status', palette = "Dark2") +
   tm_shape(states_sf) + 
   tm_borders(col = "black", lwd = 0.5)
@@ -480,6 +482,7 @@ leaflet() %>% # initializing the leaflet map
 # the interactive plot
 png(filename = 'figs/perc_rep_votes.png', width = 1366, height = 768, pointsize = 16)
 tm_shape(cty_sf_pred) + 
+  tm_borders(col = "gray80", lwd = 0.15) +
   tm_polygons('perc_rep_votes', title = '% Rep. Votes', palette = "seq") +
   tm_shape(states_sf) + 
   tm_borders(col = "black", lwd = 0.5) +
