@@ -2,14 +2,6 @@
 title: "COVID-19 Vaccines by County"
 subtitle: "Step 0: Extracting the Data and Exploratory Data Analysis"
 author:
-  - name: Longwen Zhao
-    email: longwen.zhao@slu.edu
-    affiliations:
-      - name: College for Public Health and Social Justice, Saint Louis University
-        address: 3545 Lafayette Ave
-        city: St. Louis
-        state: MO
-        postal-code: 63104
   - name: Maciej Rysz
     orcid: 0000-0003-2667-0398
     email: ryszmw@miamioh.edu
@@ -19,6 +11,14 @@ author:
         city: Oxford
         state: OH
         postal-code: 45056
+  - name: Longwen Zhao
+    email: longwen.zhao@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
   - name: Fadel M. Megahed
     orcid: 0000-0003-2194-5110
     email: fmegahed@miamioh.edu
@@ -138,9 +138,9 @@ We extracted the following data using the code in the chunk below. The descripti
 -   `fips:` The United States' Federal Information Processing Standards provide a 5-digit numeric code for geographical locations (where the first two digits are reserved to denote the state number and the following three digits are used to codify the county number within the state). The numbers are in alphabetic order, where the first state `01 = Alabama`.
 -   `mmwr_week:` The week of the epidemiologic year as defined by the [Morbidity and Mortality Weekly Report](https://ndc.services.cdc.gov/wp-content/uploads/MMWR_week_overview.pdf).  
 -   `recip_county:` The recipient county  
--   `recip_state:` The recipient state  
+-   `recip_state:` The recipient state   
+-   `completeness_pct:` Represents the proportion of fully vaccinated people whose Federal Information Processing Standards (FIPS) code is reported and matches a valid county FIPS code in the jurisdiction.   
 -   `series_complete_pop_pct:` Percent of people who are fully vaccinated (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction and county where vaccine recipient lives  
--   `booster_doses_vax_pct:` Percent of people who are fully vaccinated and have received a booster (or additional) dose   
 -   `svit_ctgy`: The CDC Social Vulnerability Index (SVI) rank categorization where:
     -   `A` = 0--0.25 SVI rank  
     -   `B` = 0.2501--0.50 SVI rank  
@@ -181,7 +181,7 @@ vaccines = raw_vaccines_tbl %>%
     # converting the date variable to date
     date = mdy(date),
     # extracting the day of the month
-    day_of_month = day(date),
+    day_of_month = mday(date),
     # extracting the month
     month = month(date)
   ) %>% 
@@ -196,8 +196,8 @@ vaccines =
   # selecting variables of interest from the CDC's dataset
   select(
     date:recip_state,
-    series_complete_pop_pct, 
-    booster_doses_vax_pct,
+    completeness_pct,
+    series_complete_pop_pct,
     svi_ctgy, 
     metro_status, 
     census2019
@@ -332,7 +332,7 @@ In the code chunk below, we create a time-series plot of the `series_complete_po
 sample_fips = vaccines %>% group_by(svi_ctgy, metro_status) %>% drop_na() %>% 
   sample_n(size = 1) %>% pull(fips)
 
-write_rds(x = sample_fips, file = 'sample_fips.rds')
+write_rds(x = sample_fips, file = 'data/sample_fips.rds')
 
 # creating the plot
 vaccines %>% 

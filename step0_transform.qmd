@@ -2,14 +2,6 @@
 title: "COVID-19 Vaccines by County"
 subtitle: "Step 0: Preparing the Data for Non-Linear Least Square Modeling"
 author:
-  - name: Longwen Zhao
-    email: longwen.zhao@slu.edu
-    affiliations:
-      - name: College for Public Health and Social Justice, Saint Louis University
-        address: 3545 Lafayette Ave
-        city: St. Louis
-        state: MO
-        postal-code: 63104
   - name: Maciej Rysz
     orcid: 0000-0003-2667-0398
     email: ryszmw@miamioh.edu
@@ -19,6 +11,14 @@ author:
         city: Oxford
         state: OH
         postal-code: 45056
+  - name: Longwen Zhao
+    email: longwen.zhao@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
   - name: Fadel M. Megahed
     orcid: 0000-0003-2194-5110
     email: fmegahed@miamioh.edu
@@ -61,6 +61,8 @@ format:
     toc-float: true
     code-overflow: wrap
     include-in-header: structure.tex
+params:
+  acceptable_zeros: 2 # we use that to consider our complete cases 
 ---
 
 ```{r setup, include=FALSE}
@@ -95,10 +97,12 @@ This is the second Markdown in our analysis workflow (see [step0_extract_and_eda
 
 -   Construct matrices (the mathematical representation) which separate:
     -   the $\mathbf{y}^*_i$ = $\begin{bmatrix} u_{i,1} & u_{i,2} & \dots & u_{i,t} \end{bmatrix}$ is a vector containing $t$ observations of the cumulative count of vaccinated, but not allocated, individuals in state $i$. We refer to this matrix as the matrix of unknowns.
-    -   *counties* with complete (i.e., no missing) data for `series_complete_pop_pct`;\
+    -   *counties* with complete (i.e., non-zero percent vaccinated starting from `r lubridate::ymd('2021-01-01') + months(params$acceptable_zeros)`) data for `series_complete_pop_pct`;\
     -   *counties* with incomplete data for `series_complete_pop_pct`;\
     -   *counties* with censored data for `series_complete_pop_pct`; and
--   Perform any additional transformations on the input data so that it can be easily modeled using non-linear least squares.
+-   Perform any additional transformations on the input data so that it can be easily modeled using non-linear least squares.  
+
+**Note that in this document, we often use the term `missing` to denote counties which had zero percent vaccinated values starting from:** `r lubridate::ymd('2021-01-01') + months(params$acceptable_zeros + 1)`.
 
 ---
 
@@ -377,7 +381,7 @@ y_star_final
 
 ### Counting the Number of Missing by FIPS and State
 
-In the code chunk below, we compute the number of observations (`n`) where the `series_complete_pop_pct` was non-zero. We expected to see a zero on `2021-01-01` since the [first COVID-19 administered in the U.S.](https://www.wsj.com/articles/covid-19-vaccinations-in-the-u-s-slated-to-begin-monday-11607941806) was on `2020-12-14`, and we are looking at the percent of fully vaccinated individuals (i.e., two-doses of a two-dose vaccine since the [Johnson and Johnson 1-dose vaccine was approved on February 27, 2021](https://www.fda.gov/emergency-preparedness-and-response/coronavirus-disease-2019-covid-19/janssen-covid-19-vaccine)). Thus, we hypothesize that most counties should have vaccinated at least one individual by `2021-02-01`.
+In the code chunk below, we compute the number of observations (`n`) where the `series_complete_pop_pct` was non-zero. We expected to see a zero on `2021-01-01` since the [first COVID-19 administered in the U.S.](https://www.wsj.com/articles/covid-19-vaccinations-in-the-u-s-slated-to-begin-monday-11607941806) was on `2020-12-14`, and we are looking at the percent of fully vaccinated individuals (i.e., two-doses of a two-dose vaccine since the [Johnson and Johnson 1-dose vaccine was approved on February 27, 2021](https://www.fda.gov/emergency-preparedness-and-response/coronavirus-disease-2019-covid-19/janssen-covid-19-vaccine)). Thus, we hypothesize that most counties should have vaccinated at least one individual by `2021-02-01`. **That being said, we consider a county's data to be complete if they have had at least one vaccine by month `r params$acceptable_zeros`.** This is an assumption that we make to seperate counties with missing data to counties with no missing data.
 
 ```{r p_matrix_index}
 vaccines = read_rds('data/vaccines.rds')
@@ -403,12 +407,12 @@ index_p_matrix =
   count(fips) %>% 
   mutate(num_missing = expected_number_of_obs_per_county - n)
 
-index_incomplete = which(index_p_matrix$num_missing > 1)
+index_incomplete = which(index_p_matrix$num_missing > params$acceptable_zeros)
 fips_incomplete = index_p_matrix$fips[index_incomplete]
 
 # creating indices for complete as well
 # since our total = complete + incomplete + missing
-index_complete = which(index_p_matrix$num_missing <= 1)
+index_complete = which(index_p_matrix$num_missing <= params$acceptable_zeros)
 fips_complete = index_p_matrix$fips[index_complete]
 ```
 

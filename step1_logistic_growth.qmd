@@ -2,14 +2,6 @@
 title: "COVID-19 Vaccines by County"
 subtitle: "Step 1: Logistic Growth Curve Modeling"
 author:
-  - name: Longwen Zhao
-    email: longwen.zhao@slu.edu
-    affiliations:
-      - name: College for Public Health and Social Justice, Saint Louis University
-        address: 3545 Lafayette Ave
-        city: St. Louis
-        state: MO
-        postal-code: 63104
   - name: Maciej Rysz
     orcid: 0000-0003-2667-0398
     email: ryszmw@miamioh.edu
@@ -19,6 +11,14 @@ author:
         city: Oxford
         state: OH
         postal-code: 45056
+  - name: Longwen Zhao
+    email: longwen.zhao@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
   - name: Fadel M. Megahed
     orcid: 0000-0003-2194-5110
     email: fmegahed@miamioh.edu
@@ -129,7 +129,7 @@ pacman::p_load(tidyverse, magrittr, janitor, lubridate, hms, skimr, # data analy
 
 In the code chunk below, we fit a logistic growth curve for all counties containing no missing data. To fit the curve, we have capitalized on the `nls()` function from the `stats` pkg, which determines the nonlinear (weighted) least-squares estimates of the parameters of a nonlinear model. Note that the NLS function requires starting values, and we utilized the approach described in [Modeling Logistic Growth Data in R](https://bscheng.com/2014/05/07/modeling-logistic-growth-data-in-r/) to attain initial values that lead to model convergence. Note that the results attained from that approach were far superior than utilizing the `SSlogis()`, which is a Self-Starting NLS Logistic Model since the latter results led to flat curves (see [covid_vaccines step1_logistic_growth awful fits](https://github.com/fmegahed/vaccines_spatial_and_optimization/commit/6b6f4c263da7c76dede1b2c2cd0f08dc5dba9d75#diff-bf6596371eb0cfec090b9866b6a3fb8041433c8fa4a290b785e3e8ef99b7274a) for details of our computations).
 
-Our output is stored to [data/growth_curve_models.rds](https://github.com/fmegahed/vaccines_spatial_and_optimization/blob/main/data/growth_curve_models.rds) and printed in a searchable datatable for the readers' convenience. **Note that in our exploratory analysis, we have also examined adding the 395 counties which had no vaccination data prior to March 01, 2022. However, the results were similar. Hence, we include in our analysis the 2386 counties with complete data beginning February 01, 2022.** To see our results from our explanatory analysis, the reader is invited to see [step0_transform and step1 results while including the 395 counties](https://github.com/fmegahed/vaccines_spatial_and_optimization/commit/5921237601e0f0296c64063a06fb582c7373a35d). 
+Our output is stored to [data/growth_curve_models.rds](https://github.com/fmegahed/vaccines_spatial_and_optimization/blob/main/data/growth_curve_models.rds) and printed in a searchable datatable for the readers' convenience. <!--**Note that in our exploratory analysis, we have also examined adding the 395 counties which had no vaccination data prior to March 01, 2022. However, the results were similar. Hence, we include in our analysis the 2386 counties with complete data beginning February 01, 2022.** To see our results from our explanatory analysis, the reader is invited to see [step0_transform and step1 results while including the 395 counties](https://github.com/fmegahed/vaccines_spatial_and_optimization/commit/5921237601e0f0296c64063a06fb582c7373a35d). --> 
 
 
 ```{r nested_models}
@@ -241,14 +241,14 @@ Based on the `growth_curve_models` above, the averages of the MAE, MSE and RMSE 
 # Visualizing the Model Outputs
 
 ```{r viz_model, out.height='800px', out.width='800px'}
-sample_fips = read_rds(file = 'sample_fips.rds')
+sample_fips = read_rds(file = 'data/sample_fips.rds')
 
 # sampling the original data
 vaccines %>% 
   filter(fips %in% sample_fips) %>% 
   mutate(county_name = paste(recip_county, recip_state, sep = ', ') ) %>% 
   group_by(county_name, fips, ) %>% 
-  select(-c(date, mmwr_week, recip_county, recip_state, booster_doses_vax_pct, census2019) ) %>% 
+  select(-c(date, mmwr_week, recip_county, recip_state, completeness_pct, census2019) ) %>% 
   mutate(series_complete_pop_pct = list(series_complete_pop_pct)) %>% 
   unique() -> 
   vaccines_sampled 
