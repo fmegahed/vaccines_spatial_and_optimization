@@ -90,7 +90,7 @@ scale_colour_discrete = scale_color_brewer(palette = "Dark2")
 
 # Objectives of this Document
 
-This is the fourth Markdown in our analysis workflow (see [step0_extract_and_eda.html](https://fmegahed.github.io/research/covid_vaccines/step0_extract_and_eda.html), [step0_transform.html](https://fmegahed.github.io/research/covid_vaccines/step0_transform.html), [step1_logistic_growth.html](https://fmegahed.github.io/research/covid_vaccines/step1_logistic_growth.html), and [step2_spatial_model.html](https://fmegahed.github.io/research/covid_vaccines/step2_spatial_model.html) for our previous analyses). The main objective of this document is to:
+This is the fifth Markdown in our analysis workflow (see [step0_extract_and_eda.html](https://fmegahed.github.io/research/covid_vaccines/step0_extract_and_eda.html), [step0_transform.html](https://fmegahed.github.io/research/covid_vaccines/step0_transform.html), [step1_logistic_growth.html](https://fmegahed.github.io/research/covid_vaccines/step1_logistic_growth.html), and [step2_spatial_model.html](https://fmegahed.github.io/research/covid_vaccines/step2_spatial_model.html) for our previous analyses). The main objective of this document is to:
 
 - Create output files in the format that is required by the optimization model. 
 
