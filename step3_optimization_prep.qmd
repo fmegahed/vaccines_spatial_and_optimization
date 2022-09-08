@@ -1,0 +1,266 @@
+---
+title: "COVID-19 Vaccines by County"
+subtitle: "Step 3: Preparing the Data for the Optimization Model"
+author:
+  - name: Maciej Rysz
+    orcid: 0000-0003-2667-0398
+    email: ryszmw@miamioh.edu
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Longwen Zhao
+    email: longwen.zhao@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
+  - name: Fadel M. Megahed
+    orcid: 0000-0003-2194-5110
+    email: fmegahed@miamioh.edu
+    corresponding: true
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Allison Jones-Farmer
+    orcid: 0000-0002-1529-1133
+    email: farmerl2@miamioh.edu
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Steve Rigdon
+    orcid: 0000-0001-7668-0899
+    email: steve.rigdon@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+format: 
+  html:
+    code-fold: false
+    code-tools: true
+    code-download: true
+    code-link: true
+    highlight-style: pygments
+    number-sections: true
+    paged-df: true
+    toc: true
+    toc-float: true
+    code-overflow: wrap
+    include-in-header: structure.tex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  progress = FALSE, 
+  verbose = FALSE,
+  fig.path = "figs/",
+  cache.extra = set.seed(2022), 
+  autodep = TRUE
+)
+
+
+options(qwraps2_markup = "markdown")
+
+# Setting properties for the default theme_bw() behavior for all plots
+if(require(ggplot2) == FALSE) install.packages("ggplot2")
+library(ggplot2) ; theme_set(theme_bw(base_size = 11) + theme(legend.position = 'top')) 
+
+# Setting default color palettes to RColorBrewer Palettes
+if(require(RColorBrewer) == FALSE) install.packages("RColorBrewer")
+scale_colour_discrete = scale_color_brewer(palette = "Dark2")
+```
+
+# Objectives of this Document
+
+This is the fourth Markdown in our analysis workflow (see [step0_extract_and_eda.html](https://fmegahed.github.io/research/covid_vaccines/step0_extract_and_eda.html), [step0_transform.html](https://fmegahed.github.io/research/covid_vaccines/step0_transform.html), [step1_logistic_growth.html](https://fmegahed.github.io/research/covid_vaccines/step1_logistic_growth.html), and [step2_spatial_model.html](https://fmegahed.github.io/research/covid_vaccines/step2_spatial_model.html) for our previous analyses). The main objective of this document is to:
+
+- Create output files in the format that is required by the optimization model. 
+
+---
+
+# R Setup and Required Packages
+
+In this project, the open-source `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language is used to model the COVID-19 percent fully-vaccinated progression in different U.S. counties. `r fontawesome::fa(name = "r-project", fill = "steelblue")` is maintained by an international team of developers who make the language available at [The Comprehensive R Archive Network](https://cran.r-project.org/). Readers interested in reusing our code and reproducing our results should have `r fontawesome::fa(name = "r-project", fill = "steelblue")` installed locally on their machines. `r fontawesome::fa(name = "r-project", fill = "steelblue")` can be installed on a number of different operating systems (see [Windows](https://cran.r-project.org/bin/windows/), [Mac](https://cran.r-project.org/bin/macosx/), and [Linux](https://cran.r-project.org/bin/linux/) for the installation instructions for these systems). We also recommend using the RStudio interface for `r fontawesome::fa(name = "r-project", fill = "steelblue")`. The reader can [download RStudio](http://www.rstudio.com/ide) for free by following the instructions at the link. For non-R users, we recommend the [Hands-on Programming with R](https://rstudio-education.github.io/hopr/packages.html) for a brief overview of the software's functionality. Hereafter, we assume that the reader has an introductory understanding of the `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language.
+
+In the code chunk below, we load the packages used to support our analysis. Our input and output files can also be accessed/ downloaded from [fmegahed/vaccines_spatial_and_optimization](https://github.com/fmegahed/vaccines_spatial_and_optimization).
+
+```{r packages, cache=FALSE}
+# create a files directory if it does not exist
+if (!dir.exists('step3_optimization_prep_files')) {dir.create('step3_optimization_prep_files')}
+
+# Check and install if these packages are not found locally on machine
+if(require(pacman)==FALSE) install.packages("pacman")
+
+pacman::p_load(tidyverse, pander) # needed packages
+```
+
+
+---
+
+# Loading and Merging the Datasets
+
+In this step, we merge the following datasets that were obtained in Steps 0--2:  
+
+- `vaccines`, which contains `fips`, `date`, `recip_state`, and  `series_completeness_pct` (i.e., the percent of a county's population who are fully vaccinated);  
+- `phi_hat_tbl`, which contains the estimated parameters for the logistic growth curve obtained via the `nls()` and `spatial models`.  We use the estimates from the spatial model to have our estimated vaccine pct per county over time, which we will smooth and constraint using the optimization model.    
+- `y_star_final`, which contains the number of individuals vaccinated with a known state but unknown county over time.  
+- In addition, we compute the `fraction of a state's population inhibited by each county` from the `census2019` variable within the `vaccines` dataset since this will also be used in our optimization model.  
+
+```{r datasets}
+# [1] tibble containing series_completeness pct (vaccination rate) and time
+vaccines = read_rds("data/vaccines.rds") 
+
+
+# [2] Recomputing the estimated vaccinate pcts from the spatial model 
+
+## Computing the expected number of observations (i.e., months of data) per county
+months_from_start = 
+  seq.Date(from = min(vaccines$date), to = max(vaccines$date), by = 'month') %>% 
+  length()
+
+## creating a vector of months from start
+months_from_start = 1:months_from_start
+
+## custom function for logistic growth curve
+lgc_fit = function(p1, p2, p3, time = months_from_start){
+  p1/(1+exp(-(p2+p3*time)))
+}
+
+## reloading the phi_matrix_tbl
+predicted_rates = 
+  read_rds('data/phi_hat_tbl.rds') %>%
+  select(fips, contains('hat')) %>%
+  mutate(
+    date = list(seq.Date(from = min(vaccines$date), to = max(vaccines$date), by = 'month')),
+    spatial_fitted = pmap(list(phi1_hat, phi2_hat, phi3_hat), .f = lgc_fit )
+    ) %>% 
+  unnest(cols = c(date, spatial_fitted)) %>% 
+  select(-contains('hat'))
+
+
+# [3] a dataset of vaccinated individuals by state but with unknown counties
+y_star_final = 
+  read_rds('data/y_star_final.rds') %>%
+  select(recip_state, date, series_complete_yes) %>% 
+  unnest( cols = c(date, series_complete_yes) ) %>% 
+  rename(unknowns = series_complete_yes)
+
+
+# [4] converting the population to a fraction of a state's population
+population_frac = 
+  vaccines %>% 
+  filter(date == min(date)) %>% 
+  group_by(recip_state) %>% 
+  select(recip_state, fips, recip_county, census2019) %>% 
+  mutate(pop_frac = census2019/sum(census2019) ) %>% 
+  ungroup()
+
+
+# [5] Merging all the data together
+merged_df = 
+  # merging the actual vaccine rates with estimated from the spatial model
+  left_join(
+    vaccines %>% select(recip_state, fips, date, series_complete_pop_pct),
+    predicted_rates,
+    by = c('fips' = 'fips', 'date' = 'date')
+  ) %>% 
+  # having a continuous time that starts at 0 for the optimization routine
+  group_by(fips) %>% 
+  mutate(time = row_number() - 1) %>% 
+  ungroup() %>% 
+  # merging with the state unknowns
+  left_join(
+    y_star_final,
+    by = c('recip_state' = 'recip_state', 'date' = 'date')
+  ) %>% 
+  # merging with fraction of population
+  left_join(
+    population_frac %>% select(-recip_state),
+    by = c('fips' = 'fips')
+  )
+
+
+# [6] tibble to be used in the optimization
+opt_df = merged_df %>% 
+  select(recip_state, fips, series_complete_pop_pct, spatial_fitted, time, unknowns, pop_frac)
+
+write_rds(x = opt_df, file = 'data/merged_df.rds')
+```
+
+The `opt_df` contains `r nrow(opt_df)` observations which corresponds to  $3108 \text{ (counties) } \times$ `r nrow(opt_df)/3108` (time periods). In addition it contains the following columns: `r pander::pander(colnames(opt_df))`.   
+
+---
+
+# Saving the Input Data for the Optimization
+
+## Creating Custom Function for Preparing the Data for Each State
+
+We created a custom function that builds on the `read.table()` function to create a tab delimited output, which lists the dimension of the data frame in the first row, followed by the observations in the data frame. The `append = T` argument allowed us to append the data and we saved the outputs from the function under the subfolder `optimization_inputs` located within our `data` folder. We named each file according to the state abbreviation.
+
+```{r custom_output_function}
+state_files = function(state, df = opt_df){
+  # filtering the data frame to the state of interest
+  df = opt_df %>% filter(recip_state == state)
+  dim_df = paste( nrow(df), ncol(df), sep = '\t' )
+  
+  # writing the the dimensions of the df and the df itself to a tab sep file
+  write.table(dim_df, quote = F, sep = "\t", row.names = F, col.names = F,
+              file = paste0('data/optimization_inputs/', state, '.txt') )
+  write.table(df, quote = F, sep = "\t", row.names = F, col.names = F,
+              file = paste0('data/optimization_inputs/', state, '.txt'),
+              append = T)
+}
+
+```
+
+
+## Utilizing the Custom Function for Saving the Files
+
+Here, we utilized a vectorized approach to create the files for each state. Below, we print the number of created files as a `sanity` check. 
+
+```{r custom_func_usage, results='asis'}
+# a vector of the continguous states and DC
+states = unique(opt_df$recip_state)
+
+# using purrr::map to apply our custom function with the states vector
+map(.x = states, .f = state_files)
+
+# checking the number of files in the directory
+files = list.files("data/optimization_inputs/", pattern="txt", recursive = TRUE)
+
+cat( 
+  paste0('We have created ', length(files),
+         ' input files for the optimization model')
+)
+
+```
+
+
+---
+
+# Appendix
+
+In this appendix, we print all the `r fontawesome::fa(name = "r-project", fill = "steelblue")` packages used in our analysis and their versions to assist with reproducing our results/analysis.
+
+```{r sessionInfo}
+pander(sessionInfo(), compact = TRUE) # printing the session info
+```
+
