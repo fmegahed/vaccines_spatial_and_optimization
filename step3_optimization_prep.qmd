@@ -241,7 +241,7 @@ Here, we utilized a vectorized approach to create the files for each state. Belo
 states = unique(opt_df$recip_state)
 
 # using purrr::map to apply our custom function with the states vector
-map(.x = states, .f = state_files)
+tabbed_files = map(.x = states, .f = state_files)
 
 # checking the number of files in the directory
 files = list.files("data/optimization_inputs/", pattern="txt", recursive = TRUE)
