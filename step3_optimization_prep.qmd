@@ -109,7 +109,7 @@ if (!dir.exists('step3_optimization_prep_files')) {dir.create('step3_optimizatio
 # Check and install if these packages are not found locally on machine
 if(require(pacman)==FALSE) install.packages("pacman")
 
-pacman::p_load(tidyverse, pander) # needed packages
+pacman::p_load(tidyverse, lubridate, pander) # needed packages
 ```
 
 
@@ -119,21 +119,40 @@ pacman::p_load(tidyverse, pander) # needed packages
 
 In this step, we merge the following datasets that were obtained in Steps 0--2:  
 
-- `vaccines`, which contains `fips`, `date`, `recip_state`, and  `series_completeness_pct` (i.e., the percent of a county's population who are fully vaccinated);  
-- `phi_hat_tbl`, which contains the estimated parameters for the logistic growth curve obtained via the `nls()` and `spatial models`.  We use the estimates from the spatial model to have our estimated vaccine pct per county over time, which we will smooth and constraint using the optimization model.    
-- `y_star_final`, which contains the number of individuals vaccinated with a known state but unknown county over time.  
+- `vaccine_counts`, which contains `fips`, `date`, `recip_state`, and  `series_complete_yes` (i.e., the total number of people who are fully vaccinated (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction and county where vaccine  recipient lives);  
+- `phi_hat_tbl`, which contains the estimated parameters for the logistic growth curve obtained via the `nls()` and `spatial models`.  We use the estimates from the spatial model to have our estimated vaccine counts per county over time, which we will smooth and constraint using the optimization model.    
+- `total_vaccines_by_state`, which contains the cumulative number of individuals vaccinated in a given state over time.  
 - In addition, we compute the `fraction of a state's population inhibited by each county` from the `census2019` variable within the `vaccines` dataset since this will also be used in our optimization model.  
 
 ```{r datasets}
-# [1] tibble containing series_completeness pct (vaccination rate) and time
-vaccines = read_rds("data/vaccines.rds") 
+# [1] tibble containing vaccines counts and time
+vaccine_counts = 
+  read_rds('data/raw_vaccines_tbl.rds') %>% 
+  # selecting the subset of columns needed for the analysis
+  select(date, fips, recip_county, recip_state, completeness_pct, series_complete_yes, series_complete_pop_pct,census2019) %>% 
+  # removing non-contiguous US states
+  filter(!recip_state %in% c('AK', 'AS', 'FM', 'GU', 'HI', 
+                             'MH', 'MP', 'PR', 'PW', 'UNK', 'VI')) %>%
+  mutate(
+    # converting the date variable from chr to date
+    date = mdy(date),
+    # extracting the day of month from the data
+    day_of_month = day(date)
+  ) %>% 
+  # filtering to the first of the month
+  filter(day_of_month == 1) %>% 
+  # arranging the data in an ascending order of date and fips codes
+  arrange(date, fips)
 
 
-# [2] Recomputing the estimated vaccinate pcts from the spatial model 
+
+# [2] Recomputing the estimated vaccinate pcts from the spatial model and
+# we will convert it into counts
 
 ## Computing the expected number of observations (i.e., months of data) per county
 months_from_start = 
-  seq.Date(from = min(vaccines$date), to = max(vaccines$date), by = 'month') %>% 
+  seq.Date(from = min(vaccine_counts$date), 
+           to = max(vaccine_counts$date), by = 'month') %>% 
   length()
 
 ## creating a vector of months from start
@@ -149,28 +168,35 @@ predicted_rates =
   read_rds('data/phi_hat_tbl.rds') %>%
   select(fips, contains('hat')) %>%
   mutate(
-    date = list(seq.Date(from = min(vaccines$date), to = max(vaccines$date), by = 'month')),
+    date = list(
+      seq.Date(from = min(vaccine_counts$date),
+               to = max(vaccine_counts$date),
+               by = 'month')),
     spatial_fitted = pmap(list(phi1_hat, phi2_hat, phi3_hat), .f = lgc_fit )
     ) %>% 
   unnest(cols = c(date, spatial_fitted)) %>% 
   select(-contains('hat'))
 
 
-# [3] a dataset of vaccinated individuals by state but with unknown counties
-y_star_final = 
-  read_rds('data/y_star_final.rds') %>%
-  select(recip_state, date, series_complete_yes) %>% 
-  unnest( cols = c(date, series_complete_yes) ) %>% 
-  rename(unknowns = series_complete_yes)
+# [3] total vaccine counts (not pcts) by state
+total_vaccines_by_state = 
+  vaccine_counts %>% 
+  # grouping by state
+  group_by(date, recip_state) %>% 
+  # creating an aggregated sum of the series_complete_yes by state
+  summarize(state_totals = sum(series_complete_yes, na.rm = T)) %>% 
+  # ungroup
+  ungroup() %>% 
+  arrange(recip_state, date)
 
 
 # [4] converting the population to a fraction of a state's population
 population_frac = 
-  vaccines %>% 
+  vaccine_counts %>% 
   filter(date == min(date)) %>% 
   group_by(recip_state) %>% 
   select(recip_state, fips, recip_county, census2019) %>% 
-  mutate(pop_frac = census2019/sum(census2019) ) %>% 
+  mutate(pop_frac = census2019/sum(census2019, na.rm = T) ) %>% 
   ungroup()
 
 
@@ -178,8 +204,8 @@ population_frac =
 merged_df = 
   # merging the actual vaccine rates with estimated from the spatial model
   left_join(
-    vaccines %>% select(recip_state, fips, date, series_complete_pop_pct),
     predicted_rates,
+    vaccine_counts %>% select(recip_state, fips, date, series_complete_yes),
     by = c('fips' = 'fips', 'date' = 'date')
   ) %>% 
   # having a continuous time that starts at 0 for the optimization routine
@@ -188,7 +214,7 @@ merged_df =
   ungroup() %>% 
   # merging with the state unknowns
   left_join(
-    y_star_final,
+    total_vaccines_by_state,
     by = c('recip_state' = 'recip_state', 'date' = 'date')
   ) %>% 
   # merging with fraction of population
@@ -197,10 +223,15 @@ merged_df =
     by = c('fips' = 'fips')
   )
 
+merged_df = merged_df %>% 
+  mutate(
+    spatial_fitted = round(0.01*spatial_fitted*census2019, 
+                           digits = 0) )
 
 # [6] tibble to be used in the optimization
 opt_df = merged_df %>% 
-  select(recip_state, fips, series_complete_pop_pct, spatial_fitted, time, unknowns, pop_frac)
+  select(recip_state, fips, series_complete_yes, 
+         spatial_fitted, time, state_totals, pop_frac)
 
 write_rds(x = opt_df, file = 'data/merged_df.rds')
 ```
@@ -218,7 +249,8 @@ We created a custom function that builds on the `read.table()` function to creat
 ```{r custom_output_function}
 state_files = function(state, df = opt_df){
   # filtering the data frame to the state of interest
-  df = opt_df %>% filter(recip_state == state)
+  df = opt_df %>% filter(recip_state == state) %>% 
+    select(-recip_state)
   dim_df = paste( nrow(df), ncol(df), sep = '\t' )
   
   # writing the the dimensions of the df and the df itself to a tab sep file
