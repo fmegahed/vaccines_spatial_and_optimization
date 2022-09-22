@@ -1,0 +1,14 @@
+ggplot2
+RColorBrewer
+pacman
+tidyverse
+tibble
+tidyr
+readr
+purrr
+dplyr
+stringr
+forcats
+lubridate
+pander
+qdapRegex

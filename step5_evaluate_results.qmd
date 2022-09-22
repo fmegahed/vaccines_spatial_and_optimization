@@ -1,0 +1,184 @@
+---
+title: "COVID-19 Vaccines by County"
+subtitle: "Step 5: Examining the Outputs from the Optimization Model"
+author:
+  - name: Maciej Rysz
+    orcid: 0000-0003-2667-0398
+    email: ryszmw@miamioh.edu
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Longwen Zhao
+    email: longwen.zhao@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
+  - name: Fadel M. Megahed
+    orcid: 0000-0003-2194-5110
+    email: fmegahed@miamioh.edu
+    corresponding: true
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Allison Jones-Farmer
+    orcid: 0000-0002-1529-1133
+    email: farmerl2@miamioh.edu
+    affiliations:
+      - name: Farmer School of Business, Miami University
+        address: 800 E. High St.
+        city: Oxford
+        state: OH
+        postal-code: 45056
+  - name: Steve Rigdon
+    orcid: 0000-0001-7668-0899
+    email: steve.rigdon@slu.edu
+    affiliations:
+      - name: College for Public Health and Social Justice, Saint Louis University
+        address: 3545 Lafayette Ave
+        city: St. Louis
+        state: MO
+        postal-code: 63104
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+format: 
+  html:
+    code-fold: false
+    code-tools: true
+    code-download: true
+    code-link: true
+    highlight-style: pygments
+    number-sections: true
+    paged-df: true
+    toc: true
+    toc-float: true
+    code-overflow: wrap
+    include-in-header: structure.tex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  progress = FALSE, 
+  verbose = FALSE,
+  fig.path = "figs/",
+  cache.extra = set.seed(2022), 
+  autodep = TRUE
+)
+
+
+options(qwraps2_markup = "markdown")
+
+# Setting properties for the default theme_bw() behavior for all plots
+if(require(ggplot2) == FALSE) install.packages("ggplot2")
+library(ggplot2) ; theme_set(theme_bw(base_size = 11) + theme(legend.position = 'top')) 
+
+# Setting default color palettes to RColorBrewer Palettes
+if(require(RColorBrewer) == FALSE) install.packages("RColorBrewer")
+scale_colour_discrete = scale_color_brewer(palette = "Dark2")
+```
+
+# Objectives of this Document
+
+This is the seventh Markdown in our analysis workflow (see [step0_extract_and_eda.html](https://fmegahed.github.io/research/covid_vaccines/step0_extract_and_eda.html), [step0_transform.html](https://fmegahed.github.io/research/covid_vaccines/step0_transform.html), [step1_logistic_growth.html](https://fmegahed.github.io/research/covid_vaccines/step1_logistic_growth.html), and [step2_spatial_model.html](https://fmegahed.github.io/research/covid_vaccines/step2_spatial_model.html) for our previous analyses). The main objective of this document is to:
+
+- Examine and evaluate the results from the optimization model. 
+
+---
+
+# R Setup and Required Packages
+
+In this project, the open-source `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language is used to model the COVID-19 percent fully-vaccinated progression in different U.S. counties. `r fontawesome::fa(name = "r-project", fill = "steelblue")` is maintained by an international team of developers who make the language available at [The Comprehensive R Archive Network](https://cran.r-project.org/). Readers interested in reusing our code and reproducing our results should have `r fontawesome::fa(name = "r-project", fill = "steelblue")` installed locally on their machines. `r fontawesome::fa(name = "r-project", fill = "steelblue")` can be installed on a number of different operating systems (see [Windows](https://cran.r-project.org/bin/windows/), [Mac](https://cran.r-project.org/bin/macosx/), and [Linux](https://cran.r-project.org/bin/linux/) for the installation instructions for these systems). We also recommend using the RStudio interface for `r fontawesome::fa(name = "r-project", fill = "steelblue")`. The reader can [download RStudio](http://www.rstudio.com/ide) for free by following the instructions at the link. For non-R users, we recommend the [Hands-on Programming with R](https://rstudio-education.github.io/hopr/packages.html) for a brief overview of the software's functionality. Hereafter, we assume that the reader has an introductory understanding of the `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language.
+
+In the code chunk below, we load the packages used to support our analysis. Our input and output files can also be accessed/ downloaded from [fmegahed/vaccines_spatial_and_optimization](https://github.com/fmegahed/vaccines_spatial_and_optimization).
+
+```{r packages, cache=FALSE}
+# create a files directory if it does not exist
+if (!dir.exists('step5_evaluate_results_files')) {dir.create('step5_evaluate_results_files')}
+
+# Check and install if these packages are not found locally on machine
+if(require(pacman)==FALSE) install.packages("pacman")
+
+pacman::p_load(tidyverse, lubridate, pander, qdapRegex) # needed packages
+```
+
+
+---
+
+# Reading the Optimization Model Results
+
+In the code chunk below, we perform the following operations:  
+
+- We identify all the files that exist within the `data/optimiation_results` folder  
+- We write a custom function that:    
+  + extracts the state name from the file name,   
+  + reads the data in all the files,   
+  + extracts the `fips`, `counts_spatial` (input to optimization model), `counts_opt_model` (output) in addition to adding columns for `recip_state` & `time`, and   
+  + combines the results for all states in a single df  
+- We extract the counts and state totals reported by CDC as computed by our [step3_optimization_prep.html](https://fmegahed.github.io/research/covid_vaccines/step3_optimization_prep.html) file, which we stored in `data/merged_df.rds` and assign to an object titled `reported_actuals`  
+- We use a `left_join()` to merge the `reported_actuals` with our `opt_results` object and export the merged object to CSV and RDS files.
+  
+
+```{r read_opt_results, results='hide'}
+opt_file_paths = list.files(path = 'data/optimization_results/')
+
+opt_results = map_df(
+  .x = opt_file_paths,
+  .f = function(x){
+    # extracting the state name from file
+    state_name = qdapRegex::ex_between(x, '_', '.')[[1]]
+    
+    # specifying the full path including the file name
+    full_path = paste0('data/optimization_results/', x)
+    
+    # reading and cleaning the data from the file 
+    df = read_delim(full_path, col_names = F) %>% 
+      # removing the last three rows containing the optimiality_risk, 
+      # optimality_gap, and # solution time
+      slice(1:(n() - 3)) %>% 
+      # renaming the columns to understandable column names
+      rename(fips = X10, counts_spatial = X2, counts_opt_model = X4) %>% 
+      # string padding the fips to five digits
+      mutate(
+        recip_state = state_name,
+        fips = str_pad(string = fips, width = 5, side = 'left', pad = 0)
+      ) %>% 
+      # group by fips to create a time index
+      group_by(fips) %>% mutate(time = row_number()-1) %>% ungroup() %>% 
+      # rearranging and selecting only the needed columns
+      select(recip_state, fips, time, counts_spatial, counts_opt_model)
+    
+    # converting scientific notation in some states to numeric
+    df %>% mutate( across(counts_spatial:counts_opt_model, as.numeric) )
+  })
+
+# getting the cdc reported actuals and state totals from our optimization_prep
+# results
+reported_actuals = read_rds('data/merged_df.rds') %>% 
+  select(fips, time, series_complete_yes, state_totals) %>% 
+  rename(cdc_reported = series_complete_yes)
+
+# merging the optimization results with the CDC data
+opt_results = 
+  left_join(
+    x = opt_results, y= reported_actuals, 
+    by = c('fips' = 'fips', 'time' = 'time')
+  ) %>% 
+  # time start at 1 (instead of 0) and shifting other indices accordingly
+  mutate(time = time + 1)
+
+# saving the merged data to our results folder
+write_csv(x = opt_results, file = 'data/optimization_results_cleaned.csv')
+write_rds(x = opt_results, file = 'data/optimization_results_cleaned.rds')
+```
+

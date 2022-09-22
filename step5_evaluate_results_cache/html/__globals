@@ -1,0 +1,1 @@
+read_opt_results	%>%	::	[[	across	as.numeric	c	counts_opt_model	counts_spatial	F	fips	group_by	left_join	list.files	map_df	mutate	n	paste0	read_delim	read_rds	recip_state	rename	row_number	select	series_complete_yes	slice	state_totals	str_pad	time	ungroup	write_csv	write_rds	X10	X2	X4
