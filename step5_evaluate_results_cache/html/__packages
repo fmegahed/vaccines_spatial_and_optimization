@@ -12,3 +12,5 @@ forcats
 lubridate
 pander
 qdapRegex
+plotly
+magick

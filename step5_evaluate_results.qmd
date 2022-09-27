@@ -109,7 +109,7 @@ if (!dir.exists('step5_evaluate_results_files')) {dir.create('step5_evaluate_res
 # Check and install if these packages are not found locally on machine
 if(require(pacman)==FALSE) install.packages("pacman")
 
-pacman::p_load(tidyverse, lubridate, pander, qdapRegex) # needed packages
+pacman::p_load(tidyverse, lubridate, pander, qdapRegex, plotly, magick)
 ```
 
 
@@ -147,7 +147,7 @@ opt_results = map_df(
       # optimality_gap, and # solution time
       slice(1:(n() - 3)) %>% 
       # renaming the columns to understandable column names
-      rename(fips = X10, counts_spatial = X2, counts_opt_model = X4) %>% 
+      rename(fips = X10, counts_opt_model = X2, counts_spatial = X4) %>% 
       # string padding the fips to five digits
       mutate(
         recip_state = state_name,
@@ -174,6 +174,9 @@ opt_results =
     x = opt_results, y= reported_actuals, 
     by = c('fips' = 'fips', 'time' = 'time')
   ) %>% 
+  left_join(y = read_rds('data/vaccines.rds') %>% 
+              select(fips, recip_county),
+            by ='fips') %>% 
   # time start at 1 (instead of 0) and shifting other indices accordingly
   mutate(time = time + 1)
 
@@ -182,3 +185,81 @@ write_csv(x = opt_results, file = 'data/optimization_results_cleaned.csv')
 write_rds(x = opt_results, file = 'data/optimization_results_cleaned.rds')
 ```
 
+
+---
+
+# Plotting the Optimization Model Results
+
+In the code chunk below, we extract the states for which we have smoothed the spatial model based on the constraints and optimization model introduced in `step4`. For each state, we create a panel plot, showing the CDC reported counts, counts obtained from our spatial model, and counts obtained from our optimization model over time for a given county. If the state has 10 or less counties, we do not sample; otherwise, we show a random sample of 10 counties from that state. The results are shown through an animated `mp4` video, which can be paused and controlled using the video's control buttons.  
+
+```{r sample_data_plot, results='hide'}
+states = unique(opt_results$recip_state)
+
+plots = map(.x = states,
+      .f = function(x, df = opt_results){
+        
+        # filtering for a specific state
+        state_tbl = df %>%  filter(recip_state == x)
+        
+        # converting to long_data
+        long_data = state_tbl %>% 
+          pivot_longer(
+            counts_spatial:cdc_reported, 
+            names_to = 'models',
+            values_to = 'counts')
+        
+        # sampling ten or all counties from a state (whichever is smaller)
+        counties_in_state = unique(long_data$fips)
+        num_counties = counties_in_state %>% length()
+        
+        invisible(
+          ifelse(num_counties <=10,
+                 fips_sample <- counties_in_state,
+                 fips_sample <- sample(counties_in_state, 10) )
+        )
+        
+        # setting the color panel with colors based on the Dark2 colorbrewer pal
+        color_pal = c("#1B9E77", "#D95F02", "#7570B3")
+        names(color_pal) = c('cdc_reported', 'counts_opt_model', 'counts_spatial')
+        
+        # creating the static plot
+        long_data %>% 
+          filter(fips %in% fips_sample) %>% 
+          mutate(county_name = paste(recip_county, recip_state, sep = ', ')) %>% 
+          ggplot(aes(x = time, y= counts, color = models)) +
+          geom_line(size = 1) + 
+          geom_point(size = 2) + 
+          scale_color_manual(values = color_pal) +
+          scale_y_continuous(breaks = scales::pretty_breaks(n=5), 
+                             labels = scales::comma) +
+          scale_x_continuous(breaks = scales::pretty_breaks(20)) +
+          facet_wrap(~ county_name, ncol = 2, scales = 'free_y') +
+          theme_bw(base_size = 10) + 
+          theme(legend.position = 'bottom') -> p
+        
+        ggsave(filename = paste0('figs/opt_results/', x, '.png'),
+               plot = p,
+               width=10, height=6)
+        
+       return(p)
+      })
+
+# read the generated figures and convert them into a video
+list.files('figs/opt_results/', full.names = T) %>% 
+  map(.f = image_read) %>% # reads each img from the extracted path file
+  image_join() %>% # joins the images
+  image_write_video(path ="figs/sample_opt_results.mp4", framerate = 0.5)
+
+# include the video in the code output
+knitr::include_graphics('figs/sample_opt_results.mp4')
+```
+
+```{r sample_data_plot_show, echo=FALSE}
+# we include it in a seperate chunk and hide the previous chunks results
+# since our custom function in plots returns an empty list in addition to the
+# plots
+knitr::include_graphics('figs/sample_opt_results.mp4')
+```
+
+
+---
