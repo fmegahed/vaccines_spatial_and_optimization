@@ -1,0 +1,4 @@
+c[0][0]= 0 c_hat= 1.76876e-321  abs_diff= 1.76876e-321  ID: 0
+Optimal_risk_via_math_prog_formulation= 0
+Optimality_gap= 1e+85
+Solution_time= 0.01 second(s)
